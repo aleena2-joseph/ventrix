@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "stream": "node stream_direct.js",
     "consume": "node kafka/KafkaConsumer.js",
     "generate-data": "node generateTrainingDataset.js 80 0.25 30000"
   },

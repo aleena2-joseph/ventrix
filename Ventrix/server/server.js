@@ -52,6 +52,8 @@ app.get("/test-db", async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
+const autoStreamer = require("./services/autoStreamer");
+
 app.use("/api/auth", authRoutes);
 app.use("/api/telemetry", telemetryRoutes);
 app.use("/api/assets", assetRoutes);
@@ -64,5 +66,6 @@ app.use("/api/alerts", alertRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server Running on Port ${PORT}`);
+  autoStreamer.start(3000);
 });
 

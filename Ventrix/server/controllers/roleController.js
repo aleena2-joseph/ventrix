@@ -2,7 +2,7 @@ const pool = require("../config/db");
 const userModel = require("../models/userModel");
 const { DEFAULT_ROLE_PERMISSIONS } = require("../middleware/roles");
 
-const LOCKED_ROLES = ["SUPER_ADMIN"];
+const LOCKED_ROLES = ["ADMIN"];
 
 // Helper to auto-create permissions tables if they don't exist yet
 async function ensurePermissionsSchema() {
@@ -49,8 +49,7 @@ async function ensurePermissionsSchema() {
       SELECT r.id, p.permission_key
       FROM roles r
       JOIN permissions p ON (
-        r.name = 'SUPER_ADMIN'
-        OR (r.name = 'VENTRIX_ADMIN' AND p.permission_key IN (
+        (r.name IN ('ADMIN', 'VENTRIX_ADMIN') AND p.permission_key IN (
           'dashboard.view','assets.view','assets.manage','fleet.view','fleet.manage',
           'telemetry.view','predictions.view','alerts.view','alerts.manage',
           'maintenance.view','maintenance.manage','service_requests.view','service_requests.create','service_requests.manage',
@@ -64,14 +63,6 @@ async function ensurePermissionsSchema() {
         OR (r.name = 'TECHNICIAN' AND p.permission_key IN (
           'dashboard.view','assets.view','telemetry.view','predictions.view','alerts.view',
           'maintenance.view','maintenance.manage','service_requests.view','service_requests.create','inventory.manage','products.manage','reports.view'
-        ))
-        OR (r.name = 'CUSTOMER_ADMIN' AND p.permission_key IN (
-          'dashboard.view','assets.view','fleet.view','fleet.manage','telemetry.view','predictions.view',
-          'alerts.view','maintenance.view','service_requests.view','service_requests.create','users.manage','reports.view'
-        ))
-        OR (r.name = 'CUSTOMER_USER' AND p.permission_key IN (
-          'dashboard.view','assets.view','fleet.view','telemetry.view','predictions.view',
-          'alerts.view','maintenance.view','service_requests.view','service_requests.create','reports.view'
         ))
       )
       ON CONFLICT DO NOTHING;

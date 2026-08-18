@@ -9,9 +9,13 @@ const {
   updateUserStatus,
   resetUserPassword,
   deleteUser,
+  getTechnicians,
 } = require("../controllers/userController");
 const { verifyToken } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/roles");
+
+// Public authenticated endpoint for technician dropdowns
+router.get("/technicians", verifyToken, getTechnicians);
 
 // Dynamic permission check: users.manage
 router.use(verifyToken, requirePermission("users.manage"));

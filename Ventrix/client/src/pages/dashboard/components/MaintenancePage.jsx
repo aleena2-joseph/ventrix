@@ -69,7 +69,7 @@ export default function MaintenancePage({ COLORS, Card, role }) {
         maintenanceService.listWorkOrders(),
         getAssets(),
         inventoryService.list().catch(() => ({ success: false })),
-        userService.list().catch(() => ({ success: false })),
+        userService.getTechnicians().catch(() => ({ success: false })),
       ]);
 
       if (woRes.success) setWorkOrders(woRes.data || []);
@@ -77,11 +77,8 @@ export default function MaintenancePage({ COLORS, Card, role }) {
 
       if (aRes.success) setAssets(aRes.data || []);
       if (invRes.success) setInventoryParts(invRes.data || []);
-      if (uRes.success) {
-        const techs = (uRes.data || []).filter(
-          (u) => u.role_name === "TECHNICIAN" || u.role_name === "ENGINEER"
-        );
-        setTechnicians(techs);
+      if (uRes.success && Array.isArray(uRes.data)) {
+        setTechnicians(uRes.data);
       }
     } catch {
       setError("Could not reach backend services.");
@@ -142,7 +139,7 @@ export default function MaintenancePage({ COLORS, Card, role }) {
 
   async function openPartUsageModal(wo) {
     setPartModalWO(wo);
-    setSelectedPartId(inventoryParts[0]?.part_id || "");
+    setSelectedPartId(inventoryParts[0]?.id ? String(inventoryParts[0].id) : "");
     setPartQty(1);
     try {
       const res = await maintenanceService.getWorkOrderParts(wo.id);
@@ -512,8 +509,8 @@ export default function MaintenancePage({ COLORS, Card, role }) {
               <div style={{ background: "#0B1120", borderRadius: 8, padding: 10, border: "1px solid rgba(255,255,255,0.06)", maxHeight: 130, overflowY: "auto" }}>
                 {woParts.map((wp) => (
                   <div key={wp.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <span>{wp.part_name || wp.part_number}</span>
-                    <strong style={{ color: "#10B981" }}>× {wp.quantity} {wp.unit_of_measure || "units"}</strong>
+                    <span>{wp.part_name || wp.name || wp.part_code || `Part #${wp.part_id}`}</span>
+                    <strong style={{ color: "#10B981" }}>× {wp.quantity} {wp.unit_of_measure || wp.unit || "pcs"}</strong>
                   </div>
                 ))}
                 {woParts.length === 0 && (
@@ -538,8 +535,8 @@ export default function MaintenancePage({ COLORS, Card, role }) {
                     >
                       <option value="">Select Part</option>
                       {inventoryParts.map((item) => (
-                        <option key={item.part_id} value={item.part_id}>
-                          {item.part_name} ({item.part_code}) — Avail: {item.quantity}
+                        <option key={item.id} value={item.id}>
+                          {item.name || item.part_name} ({item.part_code}) — Avail: {item.total_quantity ?? item.quantity ?? 0} {item.unit || "pcs"}
                         </option>
                       ))}
                     </select>

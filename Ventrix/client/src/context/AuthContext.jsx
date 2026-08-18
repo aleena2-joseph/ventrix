@@ -1,35 +1,15 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { login as loginApi, register as registerApi, getMe } from "../services/authService";
 
-const VENTRIX_ROLES = ["SUPER_ADMIN", "VENTRIX_ADMIN", "ENGINEER", "TECHNICIAN"];
-const CUSTOMER_ROLES = ["CUSTOMER_ADMIN", "CUSTOMER_USER"];
+const ROLES = ["ADMIN", "ENGINEER", "TECHNICIAN"];
+const VENTRIX_ROLES = ["ADMIN", "VENTRIX_ADMIN", "ENGINEER", "TECHNICIAN"];
+const CUSTOMER_ROLES = [];
 
 // Default baseline permissions per role (safety fallback if DB is refreshing or offline)
 const DEFAULT_ROLE_PERMISSIONS = {
+  ADMIN: ["*"],
+  VENTRIX_ADMIN: ["*"],
   SUPER_ADMIN: ["*"],
-  VENTRIX_ADMIN: [
-    "dashboard.view",
-    "assets.view",
-    "assets.manage",
-    "fleet.view",
-    "fleet.manage",
-    "telemetry.view",
-    "predictions.view",
-    "alerts.view",
-    "alerts.manage",
-    "maintenance.view",
-    "maintenance.manage",
-    "service_requests.view",
-    "service_requests.create",
-    "service_requests.manage",
-    "inventory.manage",
-    "procurement.manage",
-    "products.manage",
-    "customers.manage",
-    "users.manage",
-    "reports.view",
-    "settings.manage",
-  ],
   ENGINEER: [
     "dashboard.view",
     "assets.view",
@@ -41,6 +21,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
     "maintenance.manage",
     "service_requests.view",
     "service_requests.create",
+    "inventory.view",
     "inventory.manage",
     "products.manage",
     "reports.view",
@@ -55,34 +36,9 @@ const DEFAULT_ROLE_PERMISSIONS = {
     "maintenance.manage",
     "service_requests.view",
     "service_requests.create",
+    "inventory.view",
     "inventory.manage",
     "products.manage",
-    "reports.view",
-  ],
-  CUSTOMER_ADMIN: [
-    "dashboard.view",
-    "assets.view",
-    "fleet.view",
-    "fleet.manage",
-    "telemetry.view",
-    "predictions.view",
-    "alerts.view",
-    "maintenance.view",
-    "service_requests.view",
-    "service_requests.create",
-    "users.manage",
-    "reports.view",
-  ],
-  CUSTOMER_USER: [
-    "dashboard.view",
-    "assets.view",
-    "fleet.view",
-    "telemetry.view",
-    "predictions.view",
-    "alerts.view",
-    "maintenance.view",
-    "service_requests.view",
-    "service_requests.create",
     "reports.view",
   ],
 };
@@ -166,16 +122,16 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
-  const role = user?.role_name || user?.role || "SUPER_ADMIN";
+  const role = user?.role_name || user?.role || "ADMIN";
   const userPermissions = Array.isArray(user?.permissions) ? user.permissions : [];
-  const isVentrixRole = VENTRIX_ROLES.includes(role);
-  const isCustomerRole = CUSTOMER_ROLES.includes(role);
+  const isVentrixRole = true;
+  const isCustomerRole = false;
 
   // Dynamic permission checker with baseline role fallback
   const can = useCallback(
     (permissionKey) => {
       if (!permissionKey) return true;
-      if (role === "SUPER_ADMIN") return true;
+      if (role === "ADMIN" || role === "SUPER_ADMIN" || role === "VENTRIX_ADMIN") return true;
 
       // Check DB dynamic permissions if present
       if (userPermissions.length > 0) {
@@ -183,7 +139,7 @@ export function AuthProvider({ children }) {
       }
 
       // Fallback to role standard defaults
-      const defaults = DEFAULT_ROLE_PERMISSIONS[role] || DEFAULT_ROLE_PERMISSIONS.VENTRIX_ADMIN;
+      const defaults = DEFAULT_ROLE_PERMISSIONS[role] || DEFAULT_ROLE_PERMISSIONS.ADMIN;
       return defaults.includes("*") || defaults.includes(permissionKey);
     },
     [role, userPermissions]
@@ -214,4 +170,4 @@ export function useAuth() {
   return ctx;
 }
 
-export { VENTRIX_ROLES, CUSTOMER_ROLES, DEFAULT_ROLE_PERMISSIONS };
+export { ROLES, VENTRIX_ROLES, CUSTOMER_ROLES, DEFAULT_ROLE_PERMISSIONS };

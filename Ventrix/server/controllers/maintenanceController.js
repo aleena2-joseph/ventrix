@@ -11,6 +11,21 @@ const VALID_WORK_ORDER_STATUSES = [
   "CLOSED",
 ];
 
+// Helper to guarantee columns exist
+async function ensureMaintenanceSchema() {
+  try {
+    await pool.query(`
+      ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS alert_id INTEGER REFERENCES alerts(id) ON DELETE SET NULL;
+      ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS service_request_id INTEGER REFERENCES service_requests(id) ON DELETE SET NULL;
+      ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'MEDIUM';
+      ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+      ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    `);
+  } catch (err) {
+    // Ignore if already existing
+  }
+}
+
 // ---------------------------------------------------------------------
 // MAINTENANCE SCHEDULES
 // ---------------------------------------------------------------------
@@ -95,6 +110,8 @@ const getWorkOrders = async (req, res) => {
 
 const createWorkOrder = async (req, res) => {
   try {
+    await ensureMaintenanceSchema();
+
     const {
       asset_id,
       title,
@@ -134,11 +151,11 @@ const createWorkOrder = async (req, res) => {
 
     const workOrder = result.rows[0];
 
-    // If created from a service request, transition service request to ASSIGNED/IN_PROGRESS
+    // If created from a service request, transition service request to ASSIGNED/IN_PROGRESS and link work_order_id
     if (service_request_id) {
       await pool.query(
-        "UPDATE service_requests SET status = 'IN_PROGRESS', updated_at = NOW() WHERE id = $1",
-        [service_request_id]
+        "UPDATE service_requests SET status = 'IN_PROGRESS', work_order_id = $1 WHERE id = $2",
+        [workOrder.id, service_request_id]
       );
     }
 
@@ -176,30 +193,31 @@ const updateWorkOrderStatus = async (req, res) => {
     }
 
     const current = currentResult.rows[0];
+    const isCompleted = status === "COMPLETED" || status === "CLOSED";
 
     const result = await pool.query(
       `UPDATE work_orders
-       SET status = $1,
-           completed_at = CASE WHEN $1 = 'COMPLETED' OR $1 = 'CLOSED' THEN COALESCE(completed_at, NOW()) ELSE completed_at END,
+       SET status = $1::varchar,
+           completed_at = CASE WHEN $2::boolean THEN COALESCE(completed_at, NOW()) ELSE completed_at END,
            updated_at = NOW()
-       WHERE id = $2
+       WHERE id = $3
        RETURNING *`,
-      [status, workOrderId]
+      [status, isCompleted, workOrderId]
     );
 
     const updated = result.rows[0];
 
     // If work order resolved/closed and came from a service request, mark service request resolved
-    if ((status === "COMPLETED" || status === "CLOSED") && updated.service_request_id) {
+    if (isCompleted && updated.service_request_id) {
       await pool.query(
-        "UPDATE service_requests SET status = 'RESOLVED', updated_at = NOW() WHERE id = $1",
+        "UPDATE service_requests SET status = 'RESOLVED', resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $1",
         [updated.service_request_id]
       );
     }
 
     await auditModel.logAction({
-      userId: req.user.id,
-      organizationId: req.user.organizationId,
+      userId: req.user?.id || null,
+      organizationId: req.user?.organizationId || null,
       action: "WORK_ORDER_STATUS_CHANGED",
       entityType: "WORK_ORDER",
       entityId: workOrderId,
@@ -210,7 +228,7 @@ const updateWorkOrderStatus = async (req, res) => {
     res.status(200).json({ success: true, message: "Status updated", data: updated });
   } catch (error) {
     console.error("❌ Failed to update work order status:", error.message);
-    res.status(500).json({ success: false, message: "Failed to update work order status" });
+    res.status(500).json({ success: false, message: error.message || "Failed to update work order status" });
   }
 };
 
@@ -231,27 +249,35 @@ const useWorkOrderPart = async (req, res) => {
     await client.query("BEGIN");
 
     // Check inventory stock
-    const invRes = await client.query("SELECT * FROM inventory WHERE part_id = $1 FOR UPDATE", [part_id]);
+    const invRes = await client.query(
+      "SELECT * FROM inventory WHERE part_id = $1 AND quantity >= $2 ORDER BY quantity DESC LIMIT 1 FOR UPDATE",
+      [part_id, qty]
+    );
     const inv = invRes.rows[0];
-    if (!inv || inv.quantity < qty) {
+    if (!inv) {
+      const totalRes = await client.query(
+        "SELECT COALESCE(SUM(quantity), 0)::int AS total FROM inventory WHERE part_id = $1",
+        [part_id]
+      );
+      const available = totalRes.rows[0]?.total || 0;
       await client.query("ROLLBACK");
       return res.status(400).json({
         success: false,
-        message: `Insufficient inventory. Available: ${inv ? inv.quantity : 0}, requested: ${qty}`,
+        message: `Insufficient inventory. Available: ${available}, requested: ${qty}`,
       });
     }
 
-    // 1. Deduct stock from inventory
-    await client.query("UPDATE inventory SET quantity = quantity - $1, updated_at = NOW() WHERE part_id = $2", [
+    // 1. Deduct stock from inventory location
+    await client.query("UPDATE inventory SET quantity = quantity - $1, updated_at = NOW() WHERE id = $2", [
       qty,
-      part_id,
+      inv.id,
     ]);
 
-    // 2. Record stock transaction OUT
+    // 2. Record stock transaction OUT / USED
     await client.query(
-      `INSERT INTO stock_transactions (part_id, transaction_type, quantity, reference_type, reference_id, created_by)
-       VALUES ($1, 'OUT', $2, 'WORK_ORDER', $3, $4)`,
-      [part_id, qty, workOrderId, req.user.id]
+      `INSERT INTO stock_transactions (part_id, inventory_id, transaction_type, quantity, reference_type, reference_id)
+       VALUES ($1, $2, 'USED', $3, 'work_order', $4)`,
+      [part_id, inv.id, -qty, workOrderId]
     );
 
     // 3. Link part to work order
@@ -291,10 +317,11 @@ const getWorkOrderParts = async (req, res) => {
   try {
     const workOrderId = Number(req.params.id);
     const result = await pool.query(
-      `SELECT wop.*, p.part_number, p.name AS part_name, p.unit_of_measure
+      `SELECT wop.*, p.part_code, p.name AS part_name, p.unit AS unit_of_measure
        FROM work_order_parts wop
        JOIN parts p ON wop.part_id = p.id
-       WHERE wop.work_order_id = $1`,
+       WHERE wop.work_order_id = $1
+       ORDER BY wop.created_at ASC`,
       [workOrderId]
     );
     res.status(200).json({ success: true, data: result.rows });

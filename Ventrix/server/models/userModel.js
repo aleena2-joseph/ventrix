@@ -140,13 +140,13 @@ const deleteUser = async (id) => {
   return result.rows[0];
 };
 
-// Count active Super Admins for lockout protection
+// Count active Admins for lockout protection
 const countSuperAdmins = async () => {
   const result = await pool.query(
     `SELECT COUNT(*)::int AS count
      FROM users u
      JOIN roles r ON u.role_id = r.id
-     WHERE r.name = 'SUPER_ADMIN' AND u.status = 'ACTIVE'`
+     WHERE r.name IN ('ADMIN', 'VENTRIX_ADMIN') AND u.status = 'ACTIVE'`
   );
   return result.rows[0]?.count || 0;
 };
@@ -154,7 +154,7 @@ const countSuperAdmins = async () => {
 // Get permissions for a role or user
 const getPermissionsForRole = async (roleName, roleId) => {
   try {
-    if (roleName === "SUPER_ADMIN") {
+    if (roleName === "ADMIN" || roleName === "SUPER_ADMIN" || roleName === "VENTRIX_ADMIN") {
       const all = await pool.query("SELECT permission_key FROM permissions");
       if (all.rows.length > 0) return all.rows.map((r) => r.permission_key);
     }
@@ -174,6 +174,8 @@ const getPermissionsForRole = async (roleName, roleId) => {
 
   // Fallback defaults
   const DEFAULTS = {
+    ADMIN: ["*"],
+    VENTRIX_ADMIN: ["*"],
     SUPER_ADMIN: ["*"],
     VENTRIX_ADMIN: [
       "dashboard.view", "assets.view", "assets.manage",

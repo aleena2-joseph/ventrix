@@ -22,22 +22,20 @@ import { userService } from "../../../services/userService";
 import { roleService } from "../../../services/roleService";
 import { useAuth } from "../../../context/AuthContext";
 
-const CUSTOMER_ROLES = ["CUSTOMER_ADMIN", "CUSTOMER_USER"];
-
-const ROLE_BADGES = {
-  SUPER_ADMIN: { c: "#EC4899", bg: "#EC48991A", label: "Super Admin" },
-  VENTRIX_ADMIN: { c: "#06B6D4", bg: "#06B6D41A", label: "Ventrix Admin" },
-  ADMIN: { c: "#06B6D4", bg: "#06B6D41A", label: "Admin" },
-  ENGINEER: { c: "#3B82F6", bg: "#3B82F61A", label: "Engineer" },
-  TECHNICIAN: { c: "#10B981", bg: "#10B9811A", label: "Technician" },
+const ROLE_COLORS = {
+  ADMIN: { c: "#06B6D4", bg: "rgba(6, 182, 212, 0.15)", label: "Admin" },
+  VENTRIX_ADMIN: { c: "#06B6D4", bg: "rgba(6, 182, 212, 0.15)", label: "Admin" },
+  ENGINEER: { c: "#3B82F6", bg: "rgba(59, 130, 246, 0.15)", label: "Engineer" },
+  TECHNICIAN: { c: "#10B981", bg: "rgba(16, 185, 129, 0.15)", label: "Technician" },
 };
 
+const ROLE_BADGES = ROLE_COLORS;
+
 export default function UsersPage() {
-  const { user: currentUser, role: currentRole, isVentrixRole, can } = useAuth();
+  const { user: currentUser, can } = useAuth();
 
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
-  const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
@@ -45,7 +43,6 @@ export default function UsersPage() {
   // Filters
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
-  const [orgFilter, setOrgFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
 
   // Modals state
@@ -59,14 +56,12 @@ export default function UsersPage() {
     name: "",
     email: "",
     password: "",
-    organizationId: "",
     roleId: "",
   });
 
   const [editForm, setEditForm] = useState({
     name: "",
     email: "",
-    organizationId: "",
     roleId: "",
     status: "ACTIVE",
   });
@@ -99,10 +94,7 @@ export default function UsersPage() {
       else setError(usersRes.message || "Failed to load users.");
 
       if (rolesRes?.success) {
-        const availableRoles = isVentrixRole
-          ? rolesRes.data
-          : (rolesRes.data || []).filter((r) => CUSTOMER_ROLES.includes(r.name));
-        setRoles(availableRoles);
+        setRoles(rolesRes.data || []);
       }
     } catch {
       setError("Could not reach backend services.");
@@ -114,7 +106,7 @@ export default function UsersPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roleFilter, orgFilter, statusFilter]);
+  }, [roleFilter, statusFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -147,7 +139,6 @@ export default function UsersPage() {
         email: createForm.email.trim(),
         password: createForm.password,
         roleId: Number(createForm.roleId),
-        organizationId: createForm.organizationId ? Number(createForm.organizationId) : undefined,
       };
 
       const res = await userService.create(payload);
@@ -158,7 +149,7 @@ export default function UsersPage() {
 
       notify("success", `User "${payload.name}" created successfully.`);
       setShowAddModal(false);
-      setCreateForm({ name: "", email: "", password: "", organizationId: "", roleId: "" });
+      setCreateForm({ name: "", email: "", password: "", roleId: "" });
       loadData();
     } catch {
       setFormError("An unexpected error occurred while creating user.");
@@ -184,7 +175,6 @@ export default function UsersPage() {
         name: editForm.name.trim(),
         email: editForm.email.trim(),
         roleId: Number(editForm.roleId),
-        organizationId: editForm.organizationId ? Number(editForm.organizationId) : undefined,
         status: editForm.status,
       };
 
@@ -194,7 +184,7 @@ export default function UsersPage() {
         return;
       }
 
-      notify("success", "User profile updated successfully.");
+      notify("success", `User "${payload.name}" updated successfully.`);
       setEditingUser(null);
       loadData();
     } catch {
@@ -211,7 +201,7 @@ export default function UsersPage() {
     setFormError(null);
 
     if (!resetPasswordVal || resetPasswordVal.length < 6) {
-      setFormError("Password must be at least 6 characters.");
+      setFormError("Password must be at least 6 characters long.");
       return;
     }
 
@@ -223,31 +213,29 @@ export default function UsersPage() {
         return;
       }
 
-      notify("success", `Password reset successfully for ${resettingUser.name}.`);
+      notify("success", `Password reset for "${resettingUser.name}".`);
       setResettingUser(null);
       setResetPasswordVal("");
     } catch {
-      setFormError("Failed to reset password.");
+      setFormError("An error occurred while resetting password.");
     } finally {
       setSaving(false);
     }
   };
 
-  // Quick Status Toggle
-  const handleToggleStatus = async (targetUser) => {
-    const nextStatus = targetUser.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+  // Toggle Active/Inactive
+  const handleToggleStatus = async (user) => {
+    const nextStatus = user.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      const res = await userService.updateStatus(targetUser.id, nextStatus);
+      const res = await userService.updateStatus(user.id, nextStatus);
       if (!res.success) {
-        notify("error", res.message || "Failed to update status.");
+        notify("error", res.message || "Failed to change user status.");
         return;
       }
-      setUsers((prev) =>
-        prev.map((u) => (u.id === targetUser.id ? { ...u, status: nextStatus } : u))
-      );
-      notify("success", `User ${targetUser.name} is now ${nextStatus}.`);
+      notify("success", `User status changed to ${nextStatus}.`);
+      loadData();
     } catch {
-      notify("error", "Failed to update user status.");
+      notify("error", "Error changing user status.");
     }
   };
 
@@ -261,30 +249,29 @@ export default function UsersPage() {
         notify("error", res.message || "Failed to delete user.");
         return;
       }
-      notify("success", `User "${deletingUser.name}" deleted successfully.`);
+      notify("success", `User "${deletingUser.name}" deleted.`);
       setDeletingUser(null);
       loadData();
     } catch {
-      notify("error", "An error occurred while deleting the user.");
+      notify("error", "Failed to delete user.");
     } finally {
       setSaving(false);
     }
   };
 
-  const openEditModal = (targetUser) => {
-    setEditingUser(targetUser);
+  const openEditModal = (u) => {
     setFormError(null);
+    setEditingUser(u);
     setEditForm({
-      name: targetUser.name || "",
-      email: targetUser.email || "",
-      roleId: targetUser.role_id ? String(targetUser.role_id) : "",
-      organizationId: targetUser.organization_id ? String(targetUser.organization_id) : "",
-      status: targetUser.status || "ACTIVE",
+      name: u.name || "",
+      email: u.email || "",
+      roleId: u.role_id ? String(u.role_id) : "",
+      status: u.status || "ACTIVE",
     });
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Toast Notification */}
       {toast && (
         <div
@@ -293,55 +280,58 @@ export default function UsersPage() {
             bottom: 24,
             right: 24,
             zIndex: 100,
-            padding: "12px 20px",
-            borderRadius: 12,
             background: toast.type === "success" ? "#064E3B" : "#7F1D1D",
             border: `1px solid ${toast.type === "success" ? "#10B981" : "#EF4444"}`,
             color: "#fff",
+            padding: "12px 18px",
+            borderRadius: 10,
             display: "flex",
             alignItems: "center",
             gap: 10,
-            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.5)",
-            fontSize: 13.5,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+            animation: "fadeIn 0.2s ease-out",
           }}
         >
-          {toast.type === "success" ? <CheckCircle2 size={18} color="#34D399" /> : <AlertTriangle size={18} color="#F87171" />}
-          {toast.message}
+          {toast.type === "success" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+          <span style={{ fontSize: 13.5, fontWeight: 500 }}>{toast.message}</span>
         </div>
       )}
 
-      {/* Header & Action Button */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
         <div>
-          <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 700, color: "#fff", margin: 0 }}>
-            User Management & Access
-          </h2>
-          <div style={{ fontSize: 12.5, color: "#94A3B8", marginTop: 4 }}>
-            Control personnel accounts, tenant assignments, security roles, and permissions
-          </div>
+          <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 24, fontWeight: 800, color: "#fff", margin: 0 }}>
+            User Management
+          </h1>
+          <p style={{ color: "#94A3B8", fontSize: 13.5, margin: "4px 0 0 0" }}>
+            Manage platform accounts, assigned system roles, and account security.
+          </p>
         </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Button variant="outline" size="sm" icon={RotateCw} onClick={loadData} disabled={loading}>
+        <div style={{ display: "flex", gap: 10 }}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadData}
+            disabled={loading}
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <RotateCw size={14} className={loading ? "spin" : ""} />
             Refresh
           </Button>
+
           {canManage && (
             <Button
               variant="glow"
               size="sm"
-              icon={Plus}
               onClick={() => {
                 setFormError(null);
-                setCreateForm({
-                  name: "",
-                  email: "",
-                  password: "",
-                  organizationId: isVentrixRole ? "" : String(currentUser?.organization_id || ""),
-                  roleId: roles[0]?.id ? String(roles[0].id) : "",
-                });
+                setCreateForm({ name: "", email: "", password: "", roleId: roles[0]?.id ? String(roles[0].id) : "" });
                 setShowAddModal(true);
               }}
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
             >
+              <Plus size={16} />
               Add User
             </Button>
           )}
@@ -350,97 +340,109 @@ export default function UsersPage() {
 
       {/* Error Alert */}
       {error && (
-        <div style={{ padding: 12, borderRadius: 10, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 13 }}>
-          {error}
+        <div
+          style={{
+            padding: "12px 16px",
+            borderRadius: 10,
+            background: "#EF44441A",
+            border: "1px solid #EF444444",
+            color: "#EF4444",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 13.5,
+          }}
+        >
+          <AlertTriangle size={18} />
+          <span>{error}</span>
         </div>
       )}
 
-      {/* Summary KPI Cards */}
+      {/* KPI Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
         <Card hoverEffect={false}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8" }}>Total Users</span>
-            <UsersIcon size={16} color="#06B6D4" />
-          </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: "#F8FAFC" }}>
-            {stats.total}
-          </div>
-        </Card>
-
-        <Card hoverEffect={false}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8" }}>Active Accounts</span>
-            <UserCheck size={16} color="#22C55E" />
-          </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: "#22C55E" }}>
-            {stats.active}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Total Users</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#fff", marginTop: 4, fontFamily: "'Outfit', sans-serif" }}>
+                {stats.total}
+              </div>
+            </div>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#06B6D41A", border: "1px solid #06B6D433", display: "flex", alignItems: "center", justifyContent: "center", color: "#06B6D4" }}>
+              <UsersIcon size={20} />
+            </div>
           </div>
         </Card>
 
         <Card hoverEffect={false}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8" }}>Inactive / Suspended</span>
-            <UserX size={16} color="#EF4444" />
-          </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: "#EF4444" }}>
-            {stats.inactive}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Active Accounts</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#22C55E", marginTop: 4, fontFamily: "'Outfit', sans-serif" }}>
+                {stats.active}
+              </div>
+            </div>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#22C55E1A", border: "1px solid #22C55E33", display: "flex", alignItems: "center", justifyContent: "center", color: "#22C55E" }}>
+              <UserCheck size={20} />
+            </div>
           </div>
         </Card>
 
         <Card hoverEffect={false}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8" }}>Admin Accounts</span>
-            <ShieldCheck size={16} color="#EC4899" />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Inactive Accounts</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#94A3B8", marginTop: 4, fontFamily: "'Outfit', sans-serif" }}>
+                {stats.inactive}
+              </div>
+            </div>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#94A3B81A", border: "1px solid #94A3B833", display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8" }}>
+              <UserX size={20} />
+            </div>
           </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: "#EC4899" }}>
-            {stats.adminCount}
+        </Card>
+
+        <Card hoverEffect={false}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Administrators</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#EC4899", marginTop: 4, fontFamily: "'Outfit', sans-serif" }}>
+                {stats.adminCount}
+              </div>
+            </div>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EC48991A", border: "1px solid #EC489933", display: "flex", alignItems: "center", justifyContent: "center", color: "#EC4899" }}>
+              <ShieldCheck size={20} />
+            </div>
           </div>
         </Card>
       </div>
 
-      {/* Filter and Search Bar */}
-      <Card hoverEffect={false} style={{ padding: "16px 20px" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", justifyContent: "space-between" }}>
-          <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: 8, flex: 1, minWidth: 260, maxWidth: 400 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                background: "#040914",
-                border: "1px solid #1E293B",
-                borderRadius: 8,
-                padding: "8px 12px",
-                width: "100%",
-              }}
-            >
-              <Search size={15} color="#94A3B8" />
+      {/* Filter Toolbar */}
+      <Card hoverEffect={false}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: 8, flex: "1 1 260px", maxWidth: 420 }}>
+            <div style={{ position: "relative", width: "100%" }}>
+              <Search
+                size={16}
+                color="#64748B"
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}
+              />
               <input
                 type="text"
-                placeholder="Search by name or email..."
+                placeholder="Search user by name or email..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 style={{
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  color: "#fff",
-                  fontSize: 13,
                   width: "100%",
+                  background: "#040914",
+                  color: "#fff",
+                  border: "1px solid #1E293B",
+                  borderRadius: 8,
+                  padding: "8px 12px 8px 36px",
+                  fontSize: 13,
+                  outline: "none",
                 }}
               />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearch("");
-                    loadData();
-                  }}
-                  style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer", padding: 0 }}
-                >
-                  <X size={14} />
-                </button>
-              )}
             </div>
             <Button type="submit" variant="outline" size="sm">Search</Button>
           </form>
@@ -465,28 +467,6 @@ export default function UsersPage() {
                 <option key={r.id} value={r.id}>{r.name}</option>
               ))}
             </select>
-
-            {/* Organization Filter (Ventrix staff only) */}
-            {isVentrixRole && organizations.length > 0 && (
-              <select
-                value={orgFilter}
-                onChange={(e) => setOrgFilter(e.target.value)}
-                style={{
-                  background: "#040914",
-                  color: "#E2E8F0",
-                  border: "1px solid #1E293B",
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  fontSize: 13,
-                  outline: "none",
-                }}
-              >
-                <option value="ALL">All Organizations</option>
-                {organizations.map((org) => (
-                  <option key={org.id} value={org.id}>{org.name} ({org.code})</option>
-                ))}
-              </select>
-            )}
 
             {/* Status Filter */}
             <select
@@ -518,7 +498,6 @@ export default function UsersPage() {
               <tr style={{ textAlign: "left", color: "#64748B", fontSize: 12, borderBottom: "1px solid #1E293B" }}>
                 <th style={{ padding: "12px 10px" }}>User</th>
                 <th style={{ padding: "12px 10px" }}>Role</th>
-                {isVentrixRole && <th style={{ padding: "12px 10px" }}>Organization</th>}
                 <th style={{ padding: "12px 10px" }}>Status</th>
                 <th style={{ padding: "12px 10px" }}>Created</th>
                 {canManage && <th style={{ padding: "12px 10px", textAlign: "right" }}>Actions</th>}
@@ -584,15 +563,6 @@ export default function UsersPage() {
                       </span>
                     </td>
 
-                    {isVentrixRole && (
-                      <td style={{ padding: "14px 10px", color: "#CBD5E1" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <Building2 size={14} color="#64748B" />
-                          <span>{u.organization_name || "Ventrix"}</span>
-                        </div>
-                      </td>
-                    )}
-
                     <td style={{ padding: "14px 10px" }}>
                       <span
                         style={{
@@ -608,19 +578,12 @@ export default function UsersPage() {
                           gap: 5,
                         }}
                       >
-                        <span
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            background: u.status === "ACTIVE" ? "#22C55E" : "#EF4444",
-                          }}
-                        />
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: u.status === "ACTIVE" ? "#22C55E" : "#EF4444" }} />
                         {u.status}
                       </span>
                     </td>
 
-                    <td style={{ padding: "14px 10px", color: "#64748B", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>
+                    <td style={{ padding: "14px 10px", color: "#64748B", fontSize: 12.5 }}>
                       {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
                     </td>
 
@@ -713,7 +676,7 @@ export default function UsersPage() {
 
               {!loading && users.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: "36px 12px", textAlign: "center", color: "#64748B" }}>
+                  <td colSpan={5} style={{ padding: "36px 12px", textAlign: "center", color: "#64748B" }}>
                     <UsersIcon size={28} style={{ margin: "0 auto 8px auto", opacity: 0.5 }} />
                     <div>No users match the selected criteria.</div>
                   </td>
@@ -824,22 +787,6 @@ export default function UsersPage() {
                 </select>
               </label>
 
-              {isVentrixRole && (
-                <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
-                  Organization (Leave blank for Ventrix Manufacturer)
-                  <select
-                    value={createForm.organizationId}
-                    onChange={(e) => setCreateForm((p) => ({ ...p, organizationId: e.target.value }))}
-                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
-                  >
-                    <option value="">Ventrix (Internal Staff)</option>
-                    {organizations.map((org) => (
-                      <option key={org.id} value={org.id}>{org.name} ({org.code})</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
                 <Button type="button" variant="outline" size="sm" onClick={() => setShowAddModal(false)}>Cancel</Button>
                 <Button type="submit" variant="glow" size="sm" disabled={saving}>
@@ -876,13 +823,17 @@ export default function UsersPage() {
               padding: 28,
               width: 480,
               maxWidth: "100%",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.7)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 18, color: "#fff" }}>
                 Edit User: {editingUser.name}
               </div>
-              <button onClick={() => setEditingUser(null)} style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}>
+              <button
+                onClick={() => setEditingUser(null)}
+                style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}
+              >
                 <X size={20} />
               </button>
             </div>
@@ -930,22 +881,6 @@ export default function UsersPage() {
                 </select>
               </label>
 
-              {isVentrixRole && (
-                <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
-                  Organization
-                  <select
-                    value={editForm.organizationId}
-                    onChange={(e) => setEditForm((p) => ({ ...p, organizationId: e.target.value }))}
-                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
-                  >
-                    <option value="">Ventrix (Internal Staff)</option>
-                    {organizations.map((org) => (
-                      <option key={org.id} value={org.id}>{org.name} ({org.code})</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
               <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
                 Status
                 <select
@@ -961,7 +896,7 @@ export default function UsersPage() {
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
                 <Button type="button" variant="outline" size="sm" onClick={() => setEditingUser(null)}>Cancel</Button>
                 <Button type="submit" variant="glow" size="sm" disabled={saving}>
-                  {saving ? "Saving Changes..." : "Save Changes"}
+                  {saving ? "Saving..." : "Save Changes"}
                 </Button>
               </div>
             </form>
@@ -992,47 +927,47 @@ export default function UsersPage() {
               border: "1px solid #1E293B",
               borderRadius: 16,
               padding: 28,
-              width: 440,
+              width: 420,
               maxWidth: "100%",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.7)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 17, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
-                <KeyRound size={18} color="#06B6D4" />
+              <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 17, color: "#fff" }}>
                 Reset Password
               </div>
-              <button onClick={() => setResettingUser(null)} style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}>
-                <X size={20} />
+              <button
+                onClick={() => setResettingUser(null)}
+                style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}
+              >
+                <X size={18} />
               </button>
             </div>
 
-            <p style={{ fontSize: 13, color: "#94A3B8", marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: "#94A3B8", marginTop: 0, marginBottom: 16 }}>
               Enter a new temporary password for <strong>{resettingUser.name}</strong> ({resettingUser.email}).
             </p>
 
             {formError && (
-              <div style={{ padding: 10, borderRadius: 8, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 12.5, marginBottom: 16 }}>
+              <div style={{ padding: 10, borderRadius: 8, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 12.5, marginBottom: 14 }}>
                 {formError}
               </div>
             )}
 
             <form onSubmit={handleResetPassword} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
-                New Password *
-                <input
-                  type="password"
-                  required
-                  placeholder="Min 6 characters"
-                  value={resetPasswordVal}
-                  onChange={(e) => setResetPasswordVal(e.target.value)}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
-                />
-              </label>
+              <input
+                type="password"
+                required
+                placeholder="New Password (min 6 characters)"
+                value={resetPasswordVal}
+                onChange={(e) => setResetPasswordVal(e.target.value)}
+                style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+              />
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
                 <Button type="button" variant="outline" size="sm" onClick={() => setResettingUser(null)}>Cancel</Button>
                 <Button type="submit" variant="glow" size="sm" disabled={saving}>
-                  {saving ? "Resetting..." : "Reset Password"}
+                  {saving ? "Resetting..." : "Set Password"}
                 </Button>
               </div>
             </form>
@@ -1060,44 +995,45 @@ export default function UsersPage() {
             onClick={(e) => e.stopPropagation()}
             style={{
               background: "#0B1220",
-              border: "1px solid #EF444455",
+              border: "1px solid #EF444444",
               borderRadius: 16,
               padding: 28,
               width: 440,
               maxWidth: "100%",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.7)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EF444422", display: "flex", alignItems: "center", justifyContent: "center", color: "#EF4444" }}>
-                <AlertTriangle size={22} />
+            <div style={{ display: "flex", alignItems: "center", gap: 12, color: "#EF4444", marginBottom: 14 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EF444419", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Trash2 size={20} />
               </div>
-              <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 18, color: "#fff" }}>
-                Confirm User Deletion
+              <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 18 }}>
+                Delete User Account?
               </div>
             </div>
 
-            <p style={{ fontSize: 13.5, color: "#CBD5E1", lineHeight: 1.6, marginBottom: 20 }}>
-              Are you sure you want to delete user <strong>{deletingUser.name}</strong> ({deletingUser.email})? This action cannot be undone.
+            <p style={{ fontSize: 13.5, color: "#94A3B8", lineHeight: 1.5, margin: "0 0 20px 0" }}>
+              Are you sure you want to permanently delete <strong>{deletingUser.name}</strong> ({deletingUser.email})? This action cannot be undone.
             </p>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <Button type="button" variant="outline" size="sm" onClick={() => setDeletingUser(null)}>Cancel</Button>
               <button
+                type="button"
                 onClick={handleDelete}
                 disabled={saving}
                 style={{
-                  background: "#EF4444",
+                  background: "#DC2626",
+                  color: "#fff",
                   border: "none",
                   borderRadius: 8,
                   padding: "8px 16px",
-                  color: "#fff",
-                  fontWeight: 600,
                   fontSize: 13,
+                  fontWeight: 600,
                   cursor: "pointer",
-                  opacity: saving ? 0.7 : 1,
                 }}
               >
-                {saving ? "Deleting..." : "Delete User"}
+                {saving ? "Deleting..." : "Yes, Delete User"}
               </button>
             </div>
           </div>

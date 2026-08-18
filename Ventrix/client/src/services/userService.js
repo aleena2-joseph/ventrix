@@ -8,6 +8,7 @@ export const userService = {
     const query = new URLSearchParams(cleanParams).toString();
     return api.get(`/users${query ? `?${query}` : ""}`);
   },
+  getTechnicians: () => api.get("/users/technicians"),
   get: (id) => api.get(`/users/${id}`),
   create: (data) => api.post("/users", data),
   update: (id, data) => api.put(`/users/${id}`, data),

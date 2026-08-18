@@ -12,23 +12,24 @@ const {
 const { verifyToken } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/roles");
 
-// Protected by inventory.manage dynamic permission
-router.use(verifyToken, requirePermission("inventory.manage"));
+router.use(verifyToken);
 
-router.get("/categories", categories.getAll);
-router.post("/categories", categories.create);
-router.put("/categories/:id", categories.update);
-router.delete("/categories/:id", categories.remove);
+// Reads: Require inventory.view
+router.get("/categories", requirePermission("inventory.view"), categories.getAll);
+router.get("/parts", requirePermission("inventory.view"), getPartsWithStock);
+router.get("/parts/:id", requirePermission("inventory.view"), parts.getById);
+router.get("/stock/:partId", requirePermission("inventory.view"), getStockForPart);
+router.get("/transactions/:partId", requirePermission("inventory.view"), getTransactionsForPart);
 
-router.get("/parts", getPartsWithStock);
-router.get("/parts/:id", parts.getById);
-router.post("/parts", parts.create);
-router.put("/parts/:id", parts.update);
-router.delete("/parts/:id", parts.remove);
+// Writes: Require inventory.manage
+router.post("/categories", requirePermission("inventory.manage"), categories.create);
+router.put("/categories/:id", requirePermission("inventory.manage"), categories.update);
+router.delete("/categories/:id", requirePermission("inventory.manage"), categories.remove);
 
-router.get("/stock/:partId", getStockForPart);
-router.post("/stock/adjust", adjustStock);
+router.post("/parts", requirePermission("inventory.manage"), parts.create);
+router.put("/parts/:id", requirePermission("inventory.manage"), parts.update);
+router.delete("/parts/:id", requirePermission("inventory.manage"), parts.remove);
 
-router.get("/transactions/:partId", getTransactionsForPart);
+router.post("/stock/adjust", requirePermission("inventory.manage"), adjustStock);
 
 module.exports = router;

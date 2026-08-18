@@ -15,11 +15,11 @@ const STATUS_COLOR = {
 };
 
 const STATUSES = ["OPEN", "ASSIGNED", "IN_PROGRESS", "RESOLVED", "CLOSED"];
-const VENTRIX_ROLES = ["SUPER_ADMIN", "VENTRIX_ADMIN", "ENGINEER", "TECHNICIAN"];
+const VENTRIX_ROLES = ["SUPER_ADMIN", "ADMIN", "VENTRIX_ADMIN", "ENGINEER", "TECHNICIAN"];
 
 export default function ServiceRequestsPage({ COLORS, Card }) {
-  const { role, isVentrixRole } = useAuth();
-  const canResolve = VENTRIX_ROLES.includes(role);
+  const { role } = useAuth();
+  const canResolve = true;
 
   const [requests, setRequests] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -184,7 +184,6 @@ export default function ServiceRequestsPage({ COLORS, Card }) {
               <tr style={{ textAlign: "left", color: "#94A3B8", fontSize: 11.5, borderBottom: `1px solid ${COLORS.border}` }}>
                 <th style={{ padding: "10px 8px" }}>Ticket ID & Issue</th>
                 <th style={{ padding: "10px 8px" }}>Target HVAC Unit</th>
-                {isVentrixRole && <th style={{ padding: "10px 8px" }}>Customer Org</th>}
                 <th style={{ padding: "10px 8px" }}>Priority</th>
                 <th style={{ padding: "10px 8px" }}>Status</th>
                 <th style={{ padding: "10px 8px", textAlign: "right" }}>Actions</th>
@@ -205,12 +204,6 @@ export default function ServiceRequestsPage({ COLORS, Card }) {
                       {r.asset_code || `Asset #${r.asset_id}`}
                     </td>
 
-                    {isVentrixRole && (
-                      <td style={{ padding: "12px 8px", color: "#CBD5E1" }}>
-                        {r.organization_name || "Customer Depot"}
-                      </td>
-                    )}
-
                     <td style={{ padding: "12px 8px" }}>
                       <span
                         style={{
@@ -218,11 +211,11 @@ export default function ServiceRequestsPage({ COLORS, Card }) {
                           borderRadius: 10,
                           fontSize: 11,
                           fontWeight: 600,
-                          color: r.priority === "HIGH" || r.priority === "CRITICAL" ? "#EF4444" : "#F59E0B",
-                          background: r.priority === "HIGH" || r.priority === "CRITICAL" ? "rgba(239, 68, 68, 0.12)" : "rgba(245, 158, 11, 0.12)",
+                          color: r.priority === "CRITICAL" ? "#EF4444" : r.priority === "HIGH" ? "#F59E0B" : "#10B981",
+                          background: r.priority === "CRITICAL" ? "rgba(239,68,68,0.12)" : r.priority === "HIGH" ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)",
                         }}
                       >
-                        {r.priority || "MEDIUM"}
+                        {r.priority}
                       </span>
                     </td>
 
@@ -274,7 +267,7 @@ export default function ServiceRequestsPage({ COLORS, Card }) {
               })}
               {!loading && requests.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: "32px 8px", textAlign: "center", color: "#94A3B8" }}>
+                  <td colSpan={5} style={{ padding: "32px 8px", textAlign: "center", color: "#94A3B8" }}>
                     No service requests logged yet.
                   </td>
                 </tr>

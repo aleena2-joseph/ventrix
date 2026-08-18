@@ -8,12 +8,9 @@ const {
   getPermissionsForRole,
 } = require("../models/userModel");
 
-// Default a bare registration (no organizationId/roleId given) to
-// Indian Railways / CUSTOMER_USER, so the demo "sign up" flow produces
-// a working customer-portal account. Real Ventrix staff accounts should
-// be created by a VENTRIX_ADMIN via POST /api/users instead.
-const DEFAULT_ORG_CODE = "IR";
-const DEFAULT_ROLE_NAME = "CUSTOMER_USER";
+// Default registration fallback for single-tier platform
+const DEFAULT_ORG_CODE = "VTX";
+const DEFAULT_ROLE_NAME = "TECHNICIAN";
 
 const register = async (req, res) => {
   try {

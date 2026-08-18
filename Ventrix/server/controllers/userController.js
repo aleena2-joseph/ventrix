@@ -127,13 +127,13 @@ const updateUser = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied to user in another organization" });
     }
 
-    // Protect last active Super Admin from role changes
-    if (existing.role_name === "SUPER_ADMIN" && roleId && Number(roleId) !== existing.role_id) {
-      const superAdminCount = await userModel.countSuperAdmins();
-      if (superAdminCount <= 1) {
+    // Protect last active Admin from role changes
+    if ((existing.role_name === "ADMIN" || existing.role_name === "SUPER_ADMIN") && roleId && Number(roleId) !== existing.role_id) {
+      const adminCount = await userModel.countSuperAdmins();
+      if (adminCount <= 1) {
         return res.status(403).json({
           success: false,
-          message: "Cannot change the role of the only active Super Admin",
+          message: "Cannot change the role of the only active Administrator",
         });
       }
     }
@@ -209,12 +209,12 @@ const updateUserStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: "You cannot deactivate your own account" });
     }
 
-    if (status === "INACTIVE" && target.role_name === "SUPER_ADMIN") {
-      const superAdminCount = await userModel.countSuperAdmins();
-      if (superAdminCount <= 1) {
+    if (status === "INACTIVE" && (target.role_name === "ADMIN" || target.role_name === "SUPER_ADMIN")) {
+      const adminCount = await userModel.countSuperAdmins();
+      if (adminCount <= 1) {
         return res.status(403).json({
           success: false,
-          message: "Cannot deactivate the only active Super Admin account",
+          message: "Cannot deactivate the only active Administrator account",
         });
       }
     }
@@ -274,12 +274,12 @@ const deleteUser = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied to user in another organization" });
     }
 
-    if (target.role_name === "SUPER_ADMIN") {
-      const superAdminCount = await userModel.countSuperAdmins();
-      if (superAdminCount <= 1) {
+    if (target.role_name === "ADMIN" || target.role_name === "SUPER_ADMIN") {
+      const adminCount = await userModel.countSuperAdmins();
+      if (adminCount <= 1) {
         return res.status(403).json({
           success: false,
-          message: "Cannot delete the only Super Admin account",
+          message: "Cannot delete the only Administrator account",
         });
       }
     }
@@ -292,6 +292,23 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// GET /api/users/technicians — Accessible by all authenticated staff to populate technician selection dropdowns
+const getTechnicians = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.name, u.email, r.name as role_name, u.status
+       FROM users u
+       JOIN roles r ON u.role_id = r.id
+       WHERE r.name IN ('TECHNICIAN', 'ENGINEER') AND u.status = 'ACTIVE'
+       ORDER BY u.name ASC`
+    );
+    res.status(200).json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error("❌ Failed to list technicians:", error.message);
+    res.status(500).json({ success: false, message: "Failed to list technicians" });
+  }
+};
+
 module.exports = {
   getUsers,
   getUserById,
@@ -300,4 +317,5 @@ module.exports = {
   updateUserStatus,
   resetUserPassword,
   deleteUser,
+  getTechnicians,
 };

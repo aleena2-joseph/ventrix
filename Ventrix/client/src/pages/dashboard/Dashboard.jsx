@@ -12,7 +12,6 @@ import Card from "../../components/common/Card";
 import OverviewPage from "./components/OverviewPage";
 import AssetManagement from "./components/AssetManagement";
 import TelemetryPage from "./components/TelemetryPage";
-import PredictionsPage from "./components/PredictionsPage";
 import AlertsPage from "./components/AlertsPage";
 import MaintenancePage from "./components/MaintenancePage";
 import ServiceRequestsPage from "./components/ServiceRequestsPage";
@@ -24,7 +23,6 @@ import {
   LayoutGrid,
   Boxes,
   Activity,
-  TrendingUp,
   Bell,
   Users as UsersIcon,
   LogOut,
@@ -34,40 +32,79 @@ import {
   Menu,
 } from "lucide-react";
 
-// Navigation definition with RBAC permission keys
-const NAV_GROUPS = [
-  {
-    title: "Monitoring & Operations",
-    items: [
-      { key: "dashboard", label: "Overview Dashboard", icon: LayoutGrid, permission: "dashboard.view" },
-      { key: "telemetry", label: "Live Telemetry", icon: Activity, permission: "telemetry.view" },
-      // AI & RUL predictions commented out for now:
-      // { key: "predictions", label: "AI & RUL Predictions", icon: TrendingUp, permission: "predictions.view" },
-      { key: "alerts", label: "Alerts & Anomalies", icon: Bell, permission: "alerts.view" },
-    ],
-  },
-  {
-    title: "Asset Management",
-    items: [
-      { key: "assets", label: "HVAC Asset Registry", icon: Boxes, permission: "assets.view" },
-    ],
-  },
-  {
-    title: "Depot Operations",
-    items: [
-      { key: "service-requests", label: "Service Requests", icon: Bell, permission: "service_requests.view" },
-      { key: "maintenance", label: "Maintenance & Work Orders", icon: Wrench, permission: "maintenance.view" },
-      { key: "inventory", label: "Spare Parts & Stock", icon: Layers, permission: "inventory.manage" },
-    ],
-  },
-  {
-    title: "Administration",
-    items: [
-      { key: "users", label: "Users & Access", icon: UsersIcon, permission: "users.manage" },
-      { key: "settings", label: "Roles & Permissions", icon: Shield, permission: "settings.manage" },
-    ],
-  },
-];
+// Role-tailored navigation definitions
+function getNavGroups(role) {
+  const normRole = (role || "").toUpperCase();
+
+  if (normRole === "TECHNICIAN") {
+    return [
+      {
+        title: "Field Execution",
+        items: [
+          { key: "dashboard", label: "My Field Dashboard", icon: LayoutGrid, permission: "dashboard.view" },
+          { key: "maintenance", label: "My Work Orders", icon: Wrench, permission: "maintenance.view" },
+          { key: "service-requests", label: "Service Tickets", icon: Bell, permission: "service_requests.view" },
+          { key: "inventory", label: "Spare Parts Catalog", icon: Layers, permission: "inventory.view" },
+        ],
+      },
+    ];
+  }
+
+  if (normRole === "ENGINEER") {
+    return [
+      {
+        title: "Monitoring & Diagnostics",
+        items: [
+          { key: "dashboard", label: "Overview Dashboard", icon: LayoutGrid, permission: "dashboard.view" },
+          { key: "telemetry", label: "Live Telemetry", icon: Activity, permission: "telemetry.view" },
+          { key: "alerts", label: "Alerts & Faults", icon: Bell, permission: "alerts.view" },
+        ],
+      },
+      {
+        title: "Depot Operations",
+        items: [
+          { key: "assets", label: "HVAC Asset Registry", icon: Boxes, permission: "assets.view" },
+          { key: "maintenance", label: "Maintenance & Work Orders", icon: Wrench, permission: "maintenance.view" },
+          { key: "service-requests", label: "Service Requests", icon: Bell, permission: "service_requests.view" },
+          { key: "inventory", label: "Spare Parts & Stock", icon: Layers, permission: "inventory.view" },
+        ],
+      },
+    ];
+  }
+
+  // Admin Navigation
+  return [
+    {
+      title: "Monitoring & Operations",
+      items: [
+        { key: "dashboard", label: "Overview Dashboard", icon: LayoutGrid, permission: "dashboard.view" },
+        { key: "telemetry", label: "Live Telemetry", icon: Activity, permission: "telemetry.view" },
+        { key: "alerts", label: "Alerts & Anomalies", icon: Bell, permission: "alerts.view" },
+      ],
+    },
+    {
+      title: "Asset Management",
+      items: [
+        { key: "assets", label: "HVAC Asset Registry", icon: Boxes, permission: "assets.view" },
+      ],
+    },
+    {
+      title: "Depot Operations",
+      items: [
+        { key: "service-requests", label: "Service Requests", icon: Bell, permission: "service_requests.view" },
+        { key: "maintenance", label: "Maintenance & Work Orders", icon: Wrench, permission: "maintenance.view" },
+        { key: "inventory", label: "Spare Parts & Stock", icon: Layers, permission: "inventory.view" },
+      ],
+    },
+    {
+      title: "Administration",
+      items: [
+        { key: "users", label: "Users & Access", icon: UsersIcon, permission: "users.manage" },
+        { key: "settings", label: "Roles & Permissions", icon: Shield, permission: "settings.manage" },
+      ],
+    },
+  ];
+}
 
 function mapRowToAsset(row) {
   const health = row.raw_payload?.health || {};
@@ -83,7 +120,6 @@ function mapRowToAsset(row) {
     temperature: row.temperature != null ? Number(row.temperature) : null,
     pressure: row.pressure != null ? Number(row.pressure) : null,
     status: row.asset_state || "Unknown",
-    rul: row.predicted_rul_hours != null ? Number(row.predicted_rul_hours) : null,
     riskLevel: row.risk_level || "Unknown",
   };
 }
@@ -149,12 +185,10 @@ function NavItem({ item, isActive, onClick, t }) {
         fontSize: 13.5,
         textAlign: "left",
         transition: "all 0.15s ease",
-        borderLeft: isActive ? `2px solid ${t.primary}` : "2px solid transparent",
-        marginLeft: -1,
       }}
       onMouseEnter={(e) => {
         if (!isActive) {
-          e.currentTarget.style.background = t.isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)";
+          e.currentTarget.style.background = t.isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)";
           e.currentTarget.style.color = t.text;
         }
       }}
@@ -179,6 +213,7 @@ export default function VentrixDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [assets, setAssets] = useState([]);
   const [registryCount, setRegistryCount] = useState(null);
+  const [telemetryRows, setTelemetryRows] = useState([]);
   const [telemetry, setTelemetry] = useState(mapRowToTelemetry(null));
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -189,14 +224,15 @@ export default function VentrixDashboard() {
     navigate("/", { replace: true });
   };
 
-  const allNavItems = useMemo(() => NAV_GROUPS.flatMap((g) => g.items), []);
+  const navGroups = useMemo(() => getNavGroups(role), [role]);
+  const allNavItems = useMemo(() => navGroups.flatMap((g) => g.items), [navGroups]);
 
   const visibleGroups = useMemo(() => {
-    return NAV_GROUPS.map((group) => ({
+    return navGroups.map((group) => ({
       ...group,
       items: group.items.filter((item) => !item.permission || can(item.permission)),
     })).filter((group) => group.items.length > 0);
-  }, [can]);
+  }, [navGroups, can]);
 
   // Reset to first visible if current page is hidden
   useEffect(() => {
@@ -218,6 +254,7 @@ export default function VentrixDashboard() {
         if (cancelled) return;
         if (telRes.success) {
           const rows = telRes.data || [];
+          setTelemetryRows(rows);
           setAssets(rows.map(mapRowToAsset));
           setTelemetry(mapRowToTelemetry(rows[0]));
         }
@@ -241,8 +278,6 @@ export default function VentrixDashboard() {
 
   const activeCount = assets.filter((a) => a.status !== "ALARM").length;
   const avgHealth = assets.length > 0 ? Math.round(assets.reduce((s, a) => s + (a.health || 0), 0) / assets.length) : 100;
-  const predicted = assets.filter((a) => Number.isFinite(a.rul));
-  const avgRUL = predicted.length > 0 ? Math.round(predicted.reduce((s, a) => s + a.rul, 0) / predicted.length) : "—";
   const criticalAlerts = alerts.filter((a) => (a.level === "critical" || a.level === "warning") && !a.is_resolved).length;
 
   const pageTitle = allNavItems.find((n) => n.key === active)?.label || "Dashboard";
@@ -269,37 +304,42 @@ export default function VentrixDashboard() {
         zIndex: 40, overflow: "hidden",
         transition: "width 0.2s ease",
       }}>
-        {/* Logo */}
-        <div style={{ padding: "20px 18px 14px 18px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: "linear-gradient(135deg, #38BDF8 0%, #0284C7 100%)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 2px 8px rgba(56,189,248,0.35)",
-              flexShrink: 0,
-            }}>
-              <Activity size={16} color="#fff" />
-            </div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.3, color: t.text, lineHeight: 1 }}>Ventrix</div>
-              <div style={{ fontSize: 10.5, color: t.textMuted, marginTop: 1 }}>HVAC · RUL Platform</div>
+        {/* Brand header */}
+        <div style={{
+          height: 60, padding: "0 16px",
+          display: "flex", alignItems: "center", gap: 10,
+          borderBottom: `1px solid ${t.border}`,
+          flexShrink: 0,
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 7,
+            background: "linear-gradient(135deg, #0284C7 0%, #06B6D4 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontWeight: 800, fontSize: 13, color: "#fff", flexShrink: 0,
+          }}>
+            V
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.02em", color: t.text }}>VENTRIX</div>
+            <div style={{ fontSize: 9.5, color: t.primary, fontWeight: 700, letterSpacing: "0.08em" }}>
+              {role || "OPERATIONS"}
             </div>
           </div>
         </div>
 
-        {/* Nav Groups */}
-        <nav style={{ flex: 1, padding: "12px 12px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Navigation list */}
+        <nav style={{ flex: 1, padding: "12px 8px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
           {visibleGroups.map((group) => (
             <div key={group.title}>
               <div style={{
-                fontSize: 10.5, fontWeight: 600, color: t.textMuted,
-                textTransform: "uppercase", letterSpacing: 0.8,
-                padding: "0 4px", marginBottom: 4,
+                fontSize: 10, fontWeight: 700,
+                color: t.textMuted, textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                padding: "0 12px 6px",
               }}>
                 {group.title}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {group.items.map((item) => (
                   <NavItem
                     key={item.key}
@@ -314,69 +354,61 @@ export default function VentrixDashboard() {
           ))}
         </nav>
 
-        {/* User footer */}
-        <div style={{ padding: "12px 12px 16px", borderTop: `1px solid ${t.border}`, flexShrink: 0 }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "8px 10px", borderRadius: 8,
-            background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
-            marginBottom: 4,
-          }}>
-            <div style={{
-              width: 30, height: 30, borderRadius: 7,
-              background: isDark ? "rgba(56,189,248,0.15)" : "rgba(2,132,199,0.12)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: t.primary, fontWeight: 700, fontSize: 13, flexShrink: 0,
-            }}>
-              {user?.name?.charAt(0)?.toUpperCase() || "V"}
+        {/* User profile & logout footer */}
+        <div style={{
+          padding: "12px 14px",
+          borderTop: `1px solid ${t.border}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexShrink: 0,
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user?.name || "Ventrix User"}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {user?.name || "User"}
-              </div>
-              <div style={{ fontSize: 11, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {user?.role_name || role || "Admin"}
-              </div>
+            <div style={{ fontSize: 11, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user?.email || ""}
             </div>
           </div>
           <button
             onClick={handleLogout}
+            title="Sign out"
             style={{
-              display: "flex", alignItems: "center", gap: 8,
-              width: "100%", padding: "7px 10px", borderRadius: 7,
-              border: "none", cursor: "pointer", background: "transparent",
-              color: isDark ? "#F87171" : "#DC2626",
-              fontSize: 13, fontWeight: 500, textAlign: "left",
-              transition: "background 0.15s",
+              background: "transparent", border: "none",
+              color: t.textMuted, cursor: "pointer",
+              padding: 6, borderRadius: 6,
+              display: "flex", alignItems: "center",
+              transition: "all 0.15s ease",
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = isDark ? "rgba(248,113,113,0.08)" : "rgba(220,38,38,0.06)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+            onMouseEnter={(e) => { e.currentTarget.style.color = t.danger; e.currentTarget.style.background = isDark ? "rgba(239,68,68,0.1)" : "rgba(220,38,38,0.08)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = t.textMuted; e.currentTarget.style.background = "transparent"; }}
           >
-            <LogOut size={14} />
-            Sign Out
+            <LogOut size={15} />
           </button>
         </div>
       </aside>
 
-      {/* ── MAIN CONTENT ── */}
-      <div style={{ flex: 1, marginLeft: sidebarOpen ? 240 : 0, minWidth: 0, display: "flex", flexDirection: "column", transition: "margin-left 0.2s ease" }}>
-
-        {/* ── TOP HEADER BAR ── */}
+      {/* ── MAIN CONTENT WRAPPER ── */}
+      <div style={{
+        flex: 1,
+        marginLeft: sidebarOpen ? 240 : 0,
+        transition: "margin-left 0.2s ease",
+        display: "flex", flexDirection: "column", minWidth: 0,
+      }}>
+        {/* Top bar */}
         <header style={{
-          position: "sticky", top: 0, zIndex: 30,
           height: 60,
-          background: t.sidebar,
+          background: t.card,
           borderBottom: `1px solid ${t.border}`,
-          display: "flex", alignItems: "center",
           padding: "0 24px",
-          gap: 16,
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
+          position: "sticky", top: 0, zIndex: 30,
         }}>
-          {/* Sidebar toggle */}
+          {/* Sidebar collapse button */}
           <button
-            onClick={() => setSidebarOpen((v) => !v)}
+            onClick={() => setSidebarOpen((p) => !p)}
+            title={sidebarOpen ? "Hide navigation" : "Show navigation"}
             style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: 32, height: 32, borderRadius: 7, border: `1px solid ${t.border}`,
+              padding: 6, borderRadius: 6, border: `1px solid ${t.border}`,
               background: "transparent", cursor: "pointer", color: t.textMuted,
               transition: "all 0.15s ease", flexShrink: 0,
             }}
@@ -390,11 +422,11 @@ export default function VentrixDashboard() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: 15, color: t.text }}>{pageTitle}</div>
             <div style={{ fontSize: 11.5, color: t.textMuted }}>
-              {user?.organization_name || "Ventrix"} · {now.toLocaleDateString()} {now.toLocaleTimeString()}
+              Ventrix Operations & Depot Portal · {now.toLocaleDateString()} {now.toLocaleTimeString()}
             </div>
           </div>
 
-          {/* Right controls — Theme Toggle prominently in top-right */}
+          {/* Right controls */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             {criticalAlerts > 0 && (
               <button
@@ -413,7 +445,6 @@ export default function VentrixDashboard() {
               </button>
             )}
 
-            {/* ── THEME TOGGLE BUTTON (prominent, always visible) ── */}
             <ThemeToggle />
 
             {/* User avatar */}
@@ -436,7 +467,6 @@ export default function VentrixDashboard() {
               activeCount={activeCount}
               totalAssets={registryCount ?? assets.length}
               avgHealth={avgHealth}
-              avgRUL={avgRUL}
               criticalAlerts={criticalAlerts}
               telemetry={telemetry}
               assets={assets}
@@ -445,8 +475,7 @@ export default function VentrixDashboard() {
             />
           )}
           {active === "assets"          && <AssetManagement COLORS={COLORS_LEGACY} Card={Card} />}
-          {active === "telemetry"       && <TelemetryPage telemetry={telemetry} />}
-          {/* {active === "predictions"  && <PredictionsPage assets={assets} onNavigate={setActive} />} */}
+          {active === "telemetry"       && <TelemetryPage telemetry={telemetry} telemetryRows={telemetryRows} />}
           {active === "alerts"          && <AlertsPage onNavigate={setActive} />}
           {active === "service-requests"&& <ServiceRequestsPage COLORS={COLORS_LEGACY} Card={Card} />}
           {active === "maintenance"     && <MaintenancePage COLORS={COLORS_LEGACY} Card={Card} role={role} />}

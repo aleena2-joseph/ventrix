@@ -1,0 +1,301 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────
+   DESIGN TOKENS — DARK (default)
+   ───────────────────────────────────────────── */
+:root {
+  --color-bg:           #0B0F19;
+  --color-sidebar:      #0F172A;
+  --color-card:         #131C31;
+  --color-card-inner:   #0B1120;
+  --color-border:       rgba(255, 255, 255, 0.07);
+  --color-border-hover: rgba(56, 189, 248, 0.4);
+  --color-text:         #F1F5F9;
+  --color-text-muted:   #94A3B8;
+  --color-primary:      #38BDF8;
+  --color-primary-bg:   rgba(56, 189, 248, 0.12);
+  --color-success:      #34D399;
+  --color-success-bg:   rgba(52, 211, 153, 0.12);
+  --color-warning:      #FBBF24;
+  --color-warning-bg:   rgba(251, 191, 36, 0.12);
+  --color-danger:       #F87171;
+  --color-danger-bg:    rgba(248, 113, 113, 0.12);
+  --shadow-card:        0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.25);
+  --shadow-sm:          0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ─────────────────────────────────────────────
+   DESIGN TOKENS — LIGHT
+   ───────────────────────────────────────────── */
+html.light {
+  --color-bg:           #F8FAFC;
+  --color-sidebar:      #FFFFFF;
+  --color-card:         #FFFFFF;
+  --color-card-inner:   #F1F5F9;
+  --color-border:       #E2E8F0;
+  --color-border-hover: #0EA5E9;
+  --color-text:         #0F172A;
+  --color-text-muted:   #64748B;
+  --color-primary:      #0284C7;
+  --color-primary-bg:   rgba(2, 132, 199, 0.08);
+  --color-success:      #059669;
+  --color-success-bg:   rgba(5, 150, 105, 0.08);
+  --color-warning:      #D97706;
+  --color-warning-bg:   rgba(217, 119, 6, 0.08);
+  --color-danger:       #DC2626;
+  --color-danger-bg:    rgba(220, 38, 38, 0.08);
+  --shadow-card:        0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm:          0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* ─────────────────────────────────────────────
+   GLOBAL RESET & BASE
+   ───────────────────────────────────────────── */
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+html, body {
+  min-height: 100vh;
+}
+
+body {
+  font-family: 'Inter', 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  overflow-x: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─────────────────────────────────────────────
+   SCROLLBARS
+   ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* ─────────────────────────────────────────────
+   TYPOGRAPHY HELPERS
+   ───────────────────────────────────────────── */
+.text-gradient {
+  background: linear-gradient(135deg, #38BDF8 0%, #818CF8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+html.light .text-gradient {
+  background: linear-gradient(135deg, #0284C7 0%, #4F46E5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ─────────────────────────────────────────────
+   GLASS CARD (landing page only)
+   ───────────────────────────────────────────── */
+.glass-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+.glass-card-hover {
+  transition: all 0.2s ease;
+}
+.glass-card-hover:hover {
+  border-color: var(--color-border-hover);
+  transform: translateY(-2px);
+}
+
+/* ─────────────────────────────────────────────
+   AUTH DECK (landing page cards)
+   ───────────────────────────────────────────── */
+.auth-deck {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  min-height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.auth-deck-glow {
+  position: absolute;
+  inset: -40px;
+  background: radial-gradient(ellipse at 50% 60%, rgba(56,189,248,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+.auth-deck-grid {
+  position: relative;
+  width: 100%;
+}
+.auth-card-slot {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.auth-card-slot.is-active {
+  position: relative;
+  opacity: 1;
+  transform: scale(1) translateX(0);
+  z-index: 10;
+  pointer-events: all;
+}
+.auth-card-slot.is-back-left {
+  opacity: 0;
+  transform: scale(0.94) translateX(-24px);
+  z-index: 1;
+  pointer-events: none;
+}
+.auth-card-slot.is-back-right {
+  opacity: 0;
+  transform: scale(0.94) translateX(24px);
+  z-index: 1;
+  pointer-events: none;
+}
+.auth-card {
+  width: 100%;
+}
+
+/* ─────────────────────────────────────────────
+   GLOW TITLE  (landing hero)
+   ───────────────────────────────────────────── */
+.glow-title {
+  background: linear-gradient(135deg, #fff 0%, #a5f3fc 40%, #38bdf8 70%, #818CF8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 18px rgba(56,189,248,0.4));
+}
+html.light .glow-title {
+  background: linear-gradient(135deg, #0F172A 0%, #0284C7 55%, #4F46E5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 10px rgba(2,132,199,0.2));
+}
+
+/* ─────────────────────────────────────────────
+   BG SPATIAL GRID (landing)
+   ───────────────────────────────────────────── */
+.bg-spatial-grid {
+  background-image:
+    linear-gradient(to right, rgba(56, 189, 248, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+html.light .bg-spatial-grid {
+  background-image:
+    linear-gradient(to right, rgba(2, 132, 199, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(2, 132, 199, 0.05) 1px, transparent 1px);
+}
+
+/* ─────────────────────────────────────────────
+   ANIMATIONS
+   ───────────────────────────────────────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-float    { animation: float 4s ease-in-out infinite; }
+.animate-pulse-glow { animation: pulseGlow 3s ease-in-out infinite; }
+.animate-fade-in  { animation: fadeIn 0.3s ease forwards; }
+.animate-slide-in { animation: slideIn 0.25s ease forwards; }
+
+/* ─────────────────────────────────────────────
+   PRINT STYLES (Reports page)
+   ───────────────────────────────────────────── */
+/* ─────────────────────────────────────────────
+   DASHBOARD PAGE WRAPPER — automatic theming
+   ───────────────────────────────────────────── */
+.vx-page {
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+/* Make selects + inputs inherit theme in dashboard */
+main select,
+main input[type="text"],
+main input[type="email"],
+main input[type="password"],
+main input[type="search"] {
+  background: var(--color-card-inner, var(--color-card)) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-border) !important;
+}
+
+main select option {
+  background: var(--color-card) !important;
+  color: var(--color-text) !important;
+}
+
+/* Table rows + borders auto-theme */
+main table th,
+main table td {
+  border-color: var(--color-border) !important;
+}
+
+/* Text colour overrides for dark-hardcoded inline styles */
+html.light main [style*="color: #F8FAFC"],
+html.light main [style*="color: #E2E8F0"],
+html.light main [style*="color: #CBD5E1"] {
+  color: var(--color-text) !important;
+}
+html.light main [style*="color: #94A3B8"],
+html.light main [style*="color: #64748B"] {
+  color: var(--color-text-muted) !important;
+}
+html.light main [style*="color: #fff"],
+html.light main [style*='color: #fff'] {
+  color: var(--color-text) !important;
+}
+
+/* Background overrides for dark-hardcoded inline styles in light mode */
+html.light main [style*="background: #040914"],
+html.light main [style*="background: #0B1220"],
+html.light main [style*="background: #08101E"],
+html.light main [style*="background: #111827"],
+html.light main [style*="background: #0B1120"],
+html.light main [style*="background: #030712"] {
+  background: var(--color-card-inner) !important;
+}
+html.light main [style*="background: #131C31"],
+html.light main [style*="background: #0F172A"] {
+  background: var(--color-card) !important;
+}
+
+/* Border overrides */
+html.light main [style*="border: 1px solid #1E293B"],
+html.light main [style*="border-bottom: 1px solid #1E293B"],
+html.light main [style*="border-top: 1px solid #1E293B"] {
+  border-color: var(--color-border) !important;
+}
+
+/* ─────────────────────────────────────────────
+   PRINT STYLES (Reports page)
+   ───────────────────────────────────────────── */
+@media print {
+  header, aside, .no-print { display: none !important; }
+  body { background: white; color: black; }
+  main { margin: 0; padding: 0; }
+}

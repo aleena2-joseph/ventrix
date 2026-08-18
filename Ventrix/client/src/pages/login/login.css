@@ -1,0 +1,4 @@
+/* Login page specific styles */
+.login-bg-glow {
+  background: radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.15) 0%, transparent 60%);
+}

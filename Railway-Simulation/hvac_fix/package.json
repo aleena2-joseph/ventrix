@@ -1,0 +1,14 @@
+{
+  "name": "railway-asset-simulation",
+  "version": "1.0.0",
+  "description": "Physics-informed railway asset digital twin simulation",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "consume": "node kafka/KafkaConsumer.js",
+    "generate-data": "node generateTrainingDataset.js 80 0.25 30000"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  }
+}

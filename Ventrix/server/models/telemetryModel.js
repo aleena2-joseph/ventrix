@@ -82,6 +82,27 @@ const persistSimulationReading = async (assetId, reading, rawPayload) => {
       );
     }
 
+    // Automatically sync asset status in the registry based on simulator health & state
+    let autoStatus = "OPERATIONAL";
+    const simState = String(rawPayload.assetState || reading.assetState || "").toUpperCase();
+    if (simState === "WARNING" || (Number.isFinite(healthScore) && healthScore < 75 && healthScore >= 40)) {
+      autoStatus = "WARNING";
+    } else if (simState === "CRITICAL" || simState === "ALARM" || simState === "OFFLINE" || (Number.isFinite(healthScore) && healthScore < 40)) {
+      autoStatus = "OFFLINE";
+    } else if (simState === "MAINTENANCE") {
+      autoStatus = "MAINTENANCE";
+    } else {
+      autoStatus = "OPERATIONAL";
+    }
+
+    await client.query(
+      `UPDATE assets
+       SET status = $1,
+           updated_at = NOW()
+       WHERE id = $2 AND status NOT IN ('MAINTENANCE', 'DECOMMISSIONED')`,
+      [autoStatus, assetId]
+    );
+
     await client.query("COMMIT");
     return telemetry;
   } catch (error) {

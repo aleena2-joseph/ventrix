@@ -19,22 +19,29 @@ import Card from "../../../components/common/Card";
 import Button from "../../../components/common/Button";
 import { maintenanceService } from "../../../services/maintenanceService";
 import { inventoryService } from "../../../services/inventoryService";
-import { serviceRequestService } from "../../../services/serviceRequestService";
+import { getAssets } from "../../../services/assetService";
 import { useAuth } from "../../../context/AuthContext";
 
 export default function TechnicianOverview({ onNavigate }) {
   const { user } = useAuth();
   const [workOrders, setWorkOrders] = useState([]);
   const [parts, setParts] = useState([]);
+  const [partRequests, setPartRequests] = useState([]);
   const [woPartsMap, setWoPartsMap] = useState({});
+  const [availableAssets, setAvailableAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
   // Modals state
   const [selectedWOForPart, setSelectedWOForPart] = useState(null);
-  const [partUsageForm, setPartUsageForm] = useState({ part_id: "", quantity: 1, notes: "" });
+  const [partRequestForm, setPartRequestForm] = useState({
+    part_id: "",
+    quantity: 1,
+    urgency: "MEDIUM",
+    reason: "",
+  });
   const [showReportFaultModal, setShowReportFaultModal] = useState(false);
-  const [faultForm, setFaultForm] = useState({ asset_id: "1", title: "", description: "", priority: "HIGH" });
+  const [faultForm, setFaultForm] = useState({ asset_id: "", title: "", description: "", priority: "HIGH" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
 
@@ -46,10 +53,16 @@ export default function TechnicianOverview({ onNavigate }) {
   async function loadTechData() {
     setLoading(true);
     try {
-      const [woRes, pRes] = await Promise.all([
+      const [woRes, pRes, reqRes, aRes] = await Promise.all([
         maintenanceService.listWorkOrders().catch(() => ({ success: false })),
         inventoryService.listParts().catch(() => ({ success: false })),
+        inventoryService.listRequests({ my_requests: true }).catch(() => ({ success: false })),
+        getAssets().catch(() => ({ success: false })),
       ]);
+
+      if (aRes?.success && Array.isArray(aRes.data)) {
+        setAvailableAssets(aRes.data);
+      }
 
       if (woRes?.success && Array.isArray(woRes.data)) {
         setWorkOrders(woRes.data);
@@ -69,6 +82,9 @@ export default function TechnicianOverview({ onNavigate }) {
       }
       if (pRes?.success && Array.isArray(pRes.data)) {
         setParts(pRes.data);
+      }
+      if (reqRes?.success && Array.isArray(reqRes.data)) {
+        setPartRequests(reqRes.data);
       }
     } finally {
       setLoading(false);
@@ -103,6 +119,20 @@ export default function TechnicianOverview({ onNavigate }) {
 
   // Status Change Handler
   const handleStatusChange = async (woId, nextStatus) => {
+    if (nextStatus === "COMPLETED") {
+      // Check if there are pending part requests for this work order
+      const pendingReqs = partRequests.filter(
+        (r) => r.work_order_id === woId && r.status === "PENDING"
+      );
+      if (pendingReqs.length > 0) {
+        notify(
+          "error",
+          `Cannot complete job: ${pendingReqs.length} spare part request(s) are awaiting Admin/Engineer approval.`
+        );
+        return;
+      }
+    }
+
     try {
       const res = await maintenanceService.updateWorkOrderStatus(woId, nextStatus);
       if (res?.success) {
@@ -116,81 +146,87 @@ export default function TechnicianOverview({ onNavigate }) {
     }
   };
 
-  // Submit Part Usage
-  const handleLogPartUsage = async (e) => {
+  // Submit Spare Part Requisition (Awaiting Admin/Engineer Approval)
+  const handleCreatePartRequest = async (e) => {
     e.preventDefault();
-    if (!selectedWOForPart || !partUsageForm.part_id || !partUsageForm.quantity) {
-      setFormError("Please select a spare part and valid quantity.");
+    if (!partRequestForm.part_id || !partRequestForm.quantity) {
+      setFormError("Please select a spare part and specify a quantity.");
       return;
     }
 
-    const selectedPart = parts.find((p) => String(p.id) === String(partUsageForm.part_id));
-    const availableStock = Number(selectedPart?.total_quantity || selectedPart?.quantity || 0);
-    const requestedQty = Number(partUsageForm.quantity);
+    const selectedPart = parts.find((p) => String(p.id) === String(partRequestForm.part_id));
+    const requestedQty = Number(partRequestForm.quantity);
 
-    if (requestedQty > availableStock) {
-      setFormError(`Cannot use ${requestedQty} units. Only ${availableStock} available in depot stock.`);
+    if (requestedQty <= 0) {
+      setFormError("Quantity must be at least 1.");
       return;
     }
 
     setSaving(true);
     setFormError(null);
     try {
-      const res = await maintenanceService.usePart(selectedWOForPart.id, {
-        part_id: Number(partUsageForm.part_id),
+      const res = await inventoryService.createRequest({
+        part_id: Number(partRequestForm.part_id),
         quantity: requestedQty,
-        notes: partUsageForm.notes,
+        work_order_id: selectedWOForPart ? selectedWOForPart.id : null,
+        urgency: partRequestForm.urgency || "MEDIUM",
+        reason: partRequestForm.reason || "Field replacement requirement",
       });
 
       if (res?.success) {
         notify(
           "success",
-          `Deducted ${requestedQty} ${selectedPart?.unit || "pcs"} of ${selectedPart?.name} from warehouse stock and linked to Work Order #${selectedWOForPart.id}.`
+          `Spare part request for ${requestedQty}x ${selectedPart?.name || "item"} submitted for Admin/Engineer approval. Stock will be issued once approved.`
         );
         setSelectedWOForPart(null);
-        setPartUsageForm({ part_id: "", quantity: 1, notes: "" });
+        setPartRequestForm({ part_id: "", quantity: 1, urgency: "MEDIUM", reason: "" });
         await loadTechData();
       } else {
-        setFormError(res?.message || "Failed to record spare part usage.");
+        setFormError(res?.message || "Failed to submit spare part request.");
       }
     } catch {
-      setFormError("Error connecting to server to deduct spare part.");
+      setFormError("Error connecting to server to submit request.");
     } finally {
       setSaving(false);
     }
   };
 
-  // Submit Fault Report
+  // Submit Emergency Work Order from Bay
   const handleReportFault = async (e) => {
     e.preventDefault();
-    if (!faultForm.title) {
+    if (!faultForm.asset_id) {
+      setFormError("Please select a target HVAC unit.");
+      return;
+    }
+    if (!faultForm.title.trim()) {
       setFormError("Fault title is required.");
       return;
     }
     setSaving(true);
     try {
-      const res = await serviceRequestService.create({
+      const res = await maintenanceService.createWorkOrder({
         asset_id: Number(faultForm.asset_id),
-        title: faultForm.title,
-        description: faultForm.description,
+        title: faultForm.title.trim(),
+        description: faultForm.description ? faultForm.description.trim() : "",
         priority: faultForm.priority,
+        assigned_to: user?.id,
       });
       if (res?.success) {
-        notify("success", "Fault reported successfully to engineering supervisor.");
+        notify("success", "Emergency work order created and added to your job queue.");
         setShowReportFaultModal(false);
-        setFaultForm({ asset_id: "1", title: "", description: "", priority: "HIGH" });
+        setFaultForm({ asset_id: "", title: "", description: "", priority: "HIGH" });
         loadTechData();
       } else {
-        setFormError(res?.message || "Failed to submit fault report.");
+        setFormError(res?.message || "Failed to create work order.");
       }
     } catch {
-      setFormError("Error submitting fault report.");
+      setFormError("Error creating work order.");
     } finally {
       setSaving(false);
     }
   };
 
-  const selectedPartObject = parts.find((p) => String(p.id) === String(partUsageForm.part_id));
+  const selectedPartObject = parts.find((p) => String(p.id) === String(partRequestForm.part_id));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -240,6 +276,18 @@ export default function TechnicianOverview({ onNavigate }) {
           <Button variant="outline" size="sm" onClick={loadTechData} disabled={loading}>
             <RotateCw size={14} className={loading ? "spin" : ""} style={{ marginRight: 6 }} />
             Refresh
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setFormError(null);
+              setSelectedWOForPart({ id: null, title: "General Depot Maintenance" });
+              setPartRequestForm({ part_id: parts[0]?.id ? String(parts[0].id) : "", quantity: 1, urgency: "MEDIUM", reason: "" });
+            }}
+          >
+            <Package size={14} style={{ marginRight: 6 }} />
+            Request Spare Part
           </Button>
           <Button
             variant="glow"
@@ -542,32 +590,76 @@ export default function TechnicianOverview({ onNavigate }) {
                       </div>
                     )}
 
-                    {/* Used Spare Parts Badge List */}
-                    {usedParts.length > 0 && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 11, color: "#94A3B8" }}>Spare Parts Used:</span>
-                        {usedParts.map((p, idx) => (
-                          <span
-                            key={idx}
-                            style={{
-                              padding: "2px 7px",
-                              borderRadius: 4,
-                              background: "rgba(245, 158, 11, 0.12)",
-                              border: "1px solid rgba(245, 158, 11, 0.25)",
-                              color: "#F59E0B",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                            }}
-                          >
-                            <Package size={10} />
-                            {p.quantity}x {p.part_name || p.part_code || "Part"}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    {/* Spare Parts / Requisitions Status Badge List */}
+                    {(() => {
+                      const woReqs = partRequests.filter((r) => r.work_order_id === wo.id);
+                      if (usedParts.length === 0 && woReqs.length === 0) return null;
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
+                          <span style={{ fontSize: 11, color: "#94A3B8" }}>Spare Parts & Requisitions:</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            {woReqs.filter((r) => r.status === "PENDING").map((r) => (
+                              <span
+                                key={`req-p-${r.id}`}
+                                style={{
+                                  padding: "3px 8px",
+                                  borderRadius: 6,
+                                  background: "rgba(245, 158, 11, 0.15)",
+                                  border: "1px solid rgba(245, 158, 11, 0.35)",
+                                  color: "#F59E0B",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                }}
+                              >
+                                🟡 {r.quantity}x {r.part_name} · <em>Awaiting Admin Approval</em>
+                              </span>
+                            ))}
+                            {woReqs.filter((r) => r.status === "APPROVED").map((r) => (
+                              <span
+                                key={`req-a-${r.id}`}
+                                style={{
+                                  padding: "3px 8px",
+                                  borderRadius: 6,
+                                  background: "rgba(16, 185, 129, 0.15)",
+                                  border: "1px solid rgba(16, 185, 129, 0.35)",
+                                  color: "#10B981",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                }}
+                              >
+                                🟢 {r.quantity}x {r.part_name} · <strong>Approved & Issued</strong>
+                              </span>
+                            ))}
+                            {woReqs.filter((r) => r.status === "REJECTED").map((r) => (
+                              <span
+                                key={`req-r-${r.id}`}
+                                title={`Reason: ${r.rejection_reason || "Rejected by supervisor"}`}
+                                style={{
+                                  padding: "3px 8px",
+                                  borderRadius: 6,
+                                  background: "rgba(239, 68, 68, 0.15)",
+                                  border: "1px solid rgba(239, 68, 68, 0.35)",
+                                  color: "#EF4444",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                }}
+                              >
+                                🔴 {r.quantity}x {r.part_name} · <em>Rejected</em>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -623,11 +715,16 @@ export default function TechnicianOverview({ onNavigate }) {
                       )}
 
                       <button
-                        title="Deduct and use spare part from inventory"
+                        title="Submit spare part requisition for supervisor approval"
                         onClick={() => {
                           setFormError(null);
                           setSelectedWOForPart(wo);
-                          setPartUsageForm({ part_id: parts[0]?.id ? String(parts[0].id) : "", quantity: 1, notes: "" });
+                          setPartRequestForm({
+                            part_id: parts[0]?.id ? String(parts[0].id) : "",
+                            quantity: 1,
+                            urgency: wo.priority === "CRITICAL" ? "CRITICAL" : "MEDIUM",
+                            reason: `Required for Work Order #${wo.id} - ${wo.title}`,
+                          });
                         }}
                         style={{
                           padding: "6px 12px",
@@ -644,7 +741,7 @@ export default function TechnicianOverview({ onNavigate }) {
                         }}
                       >
                         <Package size={14} />
-                        + Use Part
+                        + Request Part
                       </button>
                     </>
                   )}
@@ -655,7 +752,106 @@ export default function TechnicianOverview({ onNavigate }) {
         </div>
       </Card>
 
-      {/* ================= MODAL: USE SPARE PART (AUTO-DEDUCTS INVENTORY) ================= */}
+      {/* ================= SECTION: MY SPARE PART REQUISITIONS ================= */}
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(245,158,11,0.15)", color: "#F59E0B", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Package size={18} />
+            </div>
+            <div>
+              <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 18, fontWeight: 700, margin: 0, color: "#fff" }}>
+                My Spare Part Requisitions
+              </h2>
+              <div style={{ fontSize: 12, color: "#94A3B8" }}>
+                Requisitions awaiting or approved by Admin/Engineer
+              </div>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setFormError(null);
+              setSelectedWOForPart({ id: null, title: "General Depot Maintenance" });
+              setPartRequestForm({ part_id: parts[0]?.id ? String(parts[0].id) : "", quantity: 1, urgency: "MEDIUM", reason: "" });
+            }}
+          >
+            <Plus size={14} style={{ marginRight: 6 }} />
+            New Requisition
+          </Button>
+        </div>
+
+        {partRequests.length === 0 ? (
+          <div style={{ padding: "24px 0", textAlign: "center", color: "#64748B", fontSize: 13 }}>
+            No spare part requisitions submitted yet. Click "+ Request Spare Part" to request components.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "#94A3B8", borderBottom: "1px solid #1E293B", fontSize: 12 }}>
+                  <th style={{ padding: "10px 8px" }}>Part Name</th>
+                  <th style={{ padding: "10px 8px" }}>Quantity</th>
+                  <th style={{ padding: "10px 8px" }}>Work Order</th>
+                  <th style={{ padding: "10px 8px" }}>Urgency</th>
+                  <th style={{ padding: "10px 8px" }}>Status</th>
+                  <th style={{ padding: "10px 8px" }}>Reviewer Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partRequests.map((req) => (
+                  <tr key={req.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                    <td style={{ padding: "12px 8px" }}>
+                      <div style={{ fontWeight: 600, color: "#fff" }}>{req.part_name}</div>
+                      <div style={{ fontSize: 11, color: "#06B6D4", fontFamily: "'JetBrains Mono', monospace" }}>{req.part_code}</div>
+                    </td>
+                    <td style={{ padding: "12px 8px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+                      {req.quantity} {req.unit_of_measure || "pcs"}
+                    </td>
+                    <td style={{ padding: "12px 8px", color: "#94A3B8" }}>
+                      {req.work_order_id ? `#${req.work_order_id} - ${req.work_order_title || "Job"}` : "General Depot"}
+                    </td>
+                    <td style={{ padding: "12px 8px" }}>
+                      <span
+                        style={{
+                          padding: "2px 7px",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: req.urgency === "CRITICAL" ? "#EF4444" : req.urgency === "HIGH" ? "#F59E0B" : "#10B981",
+                          background: req.urgency === "CRITICAL" ? "rgba(239,68,68,0.15)" : req.urgency === "HIGH" ? "rgba(245,158,11,0.15)" : "rgba(16,185,129,0.15)",
+                        }}
+                      >
+                        {req.urgency}
+                      </span>
+                    </td>
+                    <td style={{ padding: "12px 8px" }}>
+                      <span
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 20,
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          color: req.status === "APPROVED" ? "#10B981" : req.status === "REJECTED" ? "#EF4444" : "#F59E0B",
+                          background: req.status === "APPROVED" ? "rgba(16,185,129,0.15)" : req.status === "REJECTED" ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
+                        }}
+                      >
+                        {req.status === "APPROVED" ? "🟢 Approved & Issued" : req.status === "REJECTED" ? "🔴 Rejected" : "🟡 Pending Approval"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "12px 8px", fontSize: 12, color: "#94A3B8" }}>
+                      {req.rejection_reason || (req.status === "APPROVED" ? `Approved by ${req.reviewer_name || "Admin"}` : "Under review")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* ================= MODAL: REQUEST SPARE PART (AWAITING APPROVAL) ================= */}
       {selectedWOForPart && (
         <div
           style={{
@@ -678,7 +874,7 @@ export default function TechnicianOverview({ onNavigate }) {
               border: "1px solid #1E293B",
               borderRadius: 16,
               padding: 24,
-              width: 460,
+              width: 480,
               maxWidth: "100%",
               boxShadow: "0 25px 50px -12px rgba(0,0,0,0.7)",
             }}
@@ -686,10 +882,10 @@ export default function TechnicianOverview({ onNavigate }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div>
                 <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 18, color: "#fff" }}>
-                  Use Spare Part & Deduct Stock
+                  Request Spare Part Requisition
                 </div>
                 <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
-                  For Work Order #{selectedWOForPart.id} — {selectedWOForPart.title}
+                  {selectedWOForPart.id ? `For Work Order #${selectedWOForPart.id} — ${selectedWOForPart.title}` : "General Depot Maintenance Requisition"}
                 </div>
               </div>
               <button
@@ -700,25 +896,29 @@ export default function TechnicianOverview({ onNavigate }) {
               </button>
             </div>
 
+            <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(6, 182, 212, 0.1)", border: "1px solid rgba(6, 182, 212, 0.25)", color: "#06B6D4", fontSize: 12, marginBottom: 14 }}>
+              ℹ️ Requisitions are sent directly to the Admin/Engineer queue. Stock will be automatically deducted and issued to your job once approved.
+            </div>
+
             {formError && (
               <div style={{ padding: 10, borderRadius: 8, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 12.5, marginBottom: 14 }}>
                 {formError}
               </div>
             )}
 
-            <form onSubmit={handleLogPartUsage} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <form onSubmit={handleCreatePartRequest} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
-                Select Spare Part from Depot Warehouse *
+                Select Spare Part from Catalog *
                 <select
                   required
-                  value={partUsageForm.part_id}
-                  onChange={(e) => setPartUsageForm((p) => ({ ...p, part_id: e.target.value }))}
+                  value={partRequestForm.part_id}
+                  onChange={(e) => setPartRequestForm((p) => ({ ...p, part_id: e.target.value }))}
                   style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
                 >
                   <option value="">Select a spare part...</option>
                   {parts.map((part) => (
                     <option key={part.id} value={part.id}>
-                      {part.name} ({part.part_code || "SKU"}) — In Stock: {part.total_quantity || 0} {part.unit || "pcs"}
+                      {part.name} ({part.part_code || "SKU"}) — Current Warehouse Stock: {part.total_quantity || 0} {part.unit || "pcs"}
                     </option>
                   ))}
                 </select>
@@ -742,7 +942,7 @@ export default function TechnicianOverview({ onNavigate }) {
                     <div style={{ fontSize: 11.5, color: "#06B6D4", fontFamily: "'JetBrains Mono', monospace" }}>{selectedPartObject.part_code}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 11, color: "#94A3B8" }}>Warehouse Stock</div>
+                    <div style={{ fontSize: 11, color: "#94A3B8" }}>Available Stock</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: (selectedPartObject.total_quantity || 0) > 0 ? "#10B981" : "#EF4444", fontFamily: "'JetBrains Mono', monospace" }}>
                       {selectedPartObject.total_quantity || 0} {selectedPartObject.unit || "pcs"}
                     </div>
@@ -750,26 +950,42 @@ export default function TechnicianOverview({ onNavigate }) {
                 </div>
               )}
 
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
-                Quantity Consumed *
-                <input
-                  type="number"
-                  min="1"
-                  max={selectedPartObject ? Number(selectedPartObject.total_quantity || 999) : 999}
-                  required
-                  value={partUsageForm.quantity}
-                  onChange={(e) => setPartUsageForm((p) => ({ ...p, quantity: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
-                />
-              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                  Quantity Needed *
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={partRequestForm.quantity}
+                    onChange={(e) => setPartRequestForm((p) => ({ ...p, quantity: e.target.value }))}
+                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                  Urgency / Priority *
+                  <select
+                    value={partRequestForm.urgency}
+                    onChange={(e) => setPartRequestForm((p) => ({ ...p, urgency: e.target.value }))}
+                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  >
+                    <option value="LOW">Low (Routine Replenishment)</option>
+                    <option value="MEDIUM">Medium (Planned Maintenance)</option>
+                    <option value="HIGH">High (Active Fault in Bay)</option>
+                    <option value="CRITICAL">Critical (Train Departure Blocker)</option>
+                  </select>
+                </label>
+              </div>
 
               <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
-                Usage Notes / Installation Details (Optional)
+                Reason & Justification *
                 <textarea
                   rows={2}
-                  placeholder="e.g. Installed new return air filter on HVAC-001 in Bay 1"
-                  value={partUsageForm.notes}
-                  onChange={(e) => setPartUsageForm((p) => ({ ...p, notes: e.target.value }))}
+                  required
+                  placeholder="e.g. Compressor winding failure detected on HVAC-005. Requires replacement before coach testing."
+                  value={partRequestForm.reason}
+                  onChange={(e) => setPartRequestForm((p) => ({ ...p, reason: e.target.value }))}
                   style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}
                 />
               </label>
@@ -777,7 +993,7 @@ export default function TechnicianOverview({ onNavigate }) {
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
                 <Button type="button" variant="outline" size="sm" onClick={() => setSelectedWOForPart(null)}>Cancel</Button>
                 <Button type="submit" variant="glow" size="sm" disabled={saving}>
-                  {saving ? "Deducting Stock..." : "Deduct Stock & Attach to Job"}
+                  {saving ? "Submitting Requisition..." : "Submit Requisition"}
                 </Button>
               </div>
             </form>
@@ -815,7 +1031,7 @@ export default function TechnicianOverview({ onNavigate }) {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 18, color: "#fff" }}>
-                Report HVAC Fault from Bay
+                Log Emergency Work Order from Bay
               </div>
               <button
                 onClick={() => setShowReportFaultModal(false)}
@@ -833,7 +1049,24 @@ export default function TechnicianOverview({ onNavigate }) {
 
             <form onSubmit={handleReportFault} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
-                Fault Title *
+                Target HVAC Unit *
+                <select
+                  required
+                  value={faultForm.asset_id}
+                  onChange={(e) => setFaultForm((p) => ({ ...p, asset_id: e.target.value }))}
+                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                >
+                  <option value="">Select target HVAC unit...</option>
+                  {availableAssets.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.asset_code} — {a.name || "HVAC Unit"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                Work Order / Fault Title *
                 <input
                   type="text"
                   required
@@ -871,7 +1104,7 @@ export default function TechnicianOverview({ onNavigate }) {
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
                 <Button type="button" variant="outline" size="sm" onClick={() => setShowReportFaultModal(false)}>Cancel</Button>
                 <Button type="submit" variant="glow" size="sm" disabled={saving}>
-                  {saving ? "Submitting..." : "Submit to Supervisor"}
+                  {saving ? "Creating Work Order..." : "Create Work Order"}
                 </Button>
               </div>
             </form>

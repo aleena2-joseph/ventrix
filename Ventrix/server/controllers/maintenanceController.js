@@ -50,6 +50,8 @@ const getSchedules = async (req, res) => {
   }
 };
 
+const VALID_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+
 const createSchedule = async (req, res) => {
   try {
     const { asset_id, maintenance_type, scheduled_date, priority, status } = req.body;
@@ -59,10 +61,33 @@ const createSchedule = async (req, res) => {
         message: "asset_id, maintenance_type and scheduled_date are required",
       });
     }
+
+    const assetIdNum = Number(asset_id);
+    if (!Number.isInteger(assetIdNum) || assetIdNum <= 0) {
+      return res.status(400).json({ success: false, message: "asset_id must be a valid positive integer" });
+    }
+
+    const assetCheck = await pool.query("SELECT id FROM assets WHERE id = $1", [assetIdNum]);
+    if (assetCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, message: `No registered asset found with ID ${assetIdNum}` });
+    }
+
+    const cleanPriority = priority ? String(priority).toUpperCase() : "MEDIUM";
+    if (!VALID_PRIORITIES.includes(cleanPriority)) {
+      return res.status(400).json({
+        success: false,
+        message: `priority must be one of: ${VALID_PRIORITIES.join(", ")}`,
+      });
+    }
+
+    if (Number.isNaN(Date.parse(scheduled_date))) {
+      return res.status(400).json({ success: false, message: "scheduled_date must be a valid date" });
+    }
+
     const result = await pool.query(
       `INSERT INTO maintenance_schedules (asset_id, maintenance_type, scheduled_date, priority, status)
-       VALUES ($1, $2, $3, COALESCE($4, 'MEDIUM'), COALESCE($5, 'PENDING')) RETURNING *`,
-      [asset_id, maintenance_type, scheduled_date, priority, status]
+       VALUES ($1, $2, $3, $4, COALESCE($5, 'PENDING')) RETURNING *`,
+      [assetIdNum, maintenance_type.trim(), scheduled_date, cleanPriority, status]
     );
 
     await auditModel.logAction({
@@ -123,8 +148,27 @@ const createWorkOrder = async (req, res) => {
       service_request_id,
     } = req.body;
 
-    if (!asset_id || !title) {
+    const trimmedTitle = typeof title === "string" ? title.trim() : "";
+    if (!asset_id || !trimmedTitle) {
       return res.status(400).json({ success: false, message: "asset_id and title are required" });
+    }
+
+    const assetIdNum = Number(asset_id);
+    if (!Number.isInteger(assetIdNum) || assetIdNum <= 0) {
+      return res.status(400).json({ success: false, message: "asset_id must be a valid positive integer" });
+    }
+
+    const assetCheck = await pool.query("SELECT id FROM assets WHERE id = $1", [assetIdNum]);
+    if (assetCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, message: `No registered asset found with ID ${assetIdNum}` });
+    }
+
+    const cleanPriority = priority ? String(priority).toUpperCase() : "MEDIUM";
+    if (!VALID_PRIORITIES.includes(cleanPriority)) {
+      return res.status(400).json({
+        success: false,
+        message: `priority must be one of: ${VALID_PRIORITIES.join(", ")}`,
+      });
     }
 
     const finalStatus = assigned_to ? (status || "ASSIGNED") : (status || "OPEN");
@@ -134,18 +178,18 @@ const createWorkOrder = async (req, res) => {
          asset_id, title, description, priority, status, assigned_to,
          created_by, alert_id, service_request_id
        )
-       VALUES ($1, $2, $3, COALESCE($4, 'MEDIUM'), $5, $6, $7, $8, $9)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
-        asset_id,
-        title,
-        description || null,
-        priority,
+        assetIdNum,
+        trimmedTitle,
+        description ? String(description).trim() : null,
+        cleanPriority,
         finalStatus,
-        assigned_to || null,
-        req.user.id,
-        alert_id || null,
-        service_request_id || null,
+        assigned_to ? Number(assigned_to) : null,
+        req.user?.id || null,
+        alert_id ? Number(alert_id) : null,
+        service_request_id ? Number(service_request_id) : null,
       ]
     );
 

@@ -27,9 +27,11 @@ const RISK_CONFIG = {
   HIGH: { color: "#F59E0B", bg: "rgba(245, 158, 11, 0.12)", border: "rgba(245, 158, 11, 0.3)", label: "High Wear (150-500h)" },
   MEDIUM: { color: "#3B82F6", bg: "rgba(59, 130, 246, 0.12)", border: "rgba(59, 130, 246, 0.3)", label: "Medium (500-1000h)" },
   LOW: { color: "#10B981", bg: "rgba(16, 185, 129, 0.12)", border: "rgba(16, 185, 129, 0.3)", label: "Nominal (>1000h)" },
+  UNKNOWN: { color: "#94A3B8", bg: "rgba(148, 163, 184, 0.12)", border: "rgba(148, 163, 184, 0.3)", label: "Awaiting Data" },
 };
 
 function getRiskCategory(health, rul) {
+  if (health == null) return "UNKNOWN";
   if (health < 40 || (rul != null && rul < 150)) return "CRITICAL";
   if (health < 60 || (rul != null && rul < 500)) return "HIGH";
   if (health < 80 || (rul != null && rul < 1000)) return "MEDIUM";
@@ -37,6 +39,9 @@ function getRiskCategory(health, rul) {
 }
 
 function getPrescriptiveAction(health, assetCode) {
+  if (health == null) {
+    return `Awaiting live telemetry stream for ${assetCode} to compute component degradation and prescriptive actions.`;
+  }
   if (health < 40) {
     return `Emergency shutdown advisory for ${assetCode}. Compressor bearing wear detected. Immediate technician dispatch recommended.`;
   }
@@ -61,13 +66,13 @@ const DEGRADATION_CURVE_DATA = [
   { operatingHours: "2100h (Projected)", baselineNominal: 74, actualTrajectory: 32, thresholdWarning: 60, thresholdFailure: 40 },
 ];
 
-export default function PredictionsPage({ assets, onNavigate }) {
+export default function PredictionsPage({ assets = [], onNavigate }) {
   const [riskFilter, setRiskFilter] = useState("ALL");
-  const [selectedAssetForCurve, setSelectedAssetForCurve] = useState("HVAC-001");
+  const [selectedAssetForCurve, setSelectedAssetForCurve] = useState(assets[0]?.id || "");
 
-  const enrichedAssets = assets.map((a) => {
-    const health = a.health ?? 88;
-    const rul = a.rul ?? (health >= 80 ? 1450 : health >= 60 ? 680 : health >= 40 ? 320 : 90);
+  const enrichedAssets = (Array.isArray(assets) ? assets : []).map((a) => {
+    const health = a.health != null ? Number(a.health) : null;
+    const rul = a.rul != null ? Number(a.rul) : null;
     const risk = getRiskCategory(health, rul);
     const recommendation = getPrescriptiveAction(health, a.id);
     return { ...a, health, rul, risk, recommendation };
@@ -242,14 +247,14 @@ export default function PredictionsPage({ assets, onNavigate }) {
                 <div>
                   <div style={{ fontSize: 11, color: "#94A3B8" }}>Predicted RUL</div>
                   <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: riskConfig.color, marginTop: 2 }}>
-                    {Math.round(a.rul)} hrs
+                    {a.rul != null ? `${Math.round(a.rul)} hrs` : "Awaiting Data"}
                   </div>
                 </div>
 
                 <div>
                   <div style={{ fontSize: 11, color: "#94A3B8" }}>Health Index</div>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: a.health >= 80 ? "#10B981" : a.health >= 60 ? "#F59E0B" : "#EF4444", marginTop: 2 }}>
-                    {a.health}%
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: a.health != null ? (a.health >= 80 ? "#10B981" : a.health >= 60 ? "#F59E0B" : "#EF4444") : "#94A3B8", marginTop: 2 }}>
+                    {a.health != null ? `${Math.round(a.health)}%` : "—"}
                   </div>
                 </div>
               </div>

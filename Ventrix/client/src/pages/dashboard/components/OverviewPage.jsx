@@ -16,6 +16,6 @@ export default function OverviewPage(props) {
     return <EngineerOverview {...props} />;
   }
 
-  // Admin Overview (for ADMIN, VENTRIX_ADMIN, SUPER_ADMIN, etc.)
+  // Admin Overview (for ADMIN, VENTRIX_ADMIN, etc.)
   return <AdminOverview {...props} />;
 }

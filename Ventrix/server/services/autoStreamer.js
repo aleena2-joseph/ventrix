@@ -86,27 +86,22 @@ async function tick() {
   }
 }
 
-function start(intervalMs = 3000) {
-  if (isRunning) return;
-  isRunning = true;
-  tick();
-  timer = setInterval(tick, intervalMs);
-  console.log("⚡ Real-time Telemetry Auto-Streamer active (3s interval)");
+function start() {
+  console.log("ℹ️ Auto-Streamer is disabled. Real telemetry must be streamed from Railway-Simulation/hvac_fix/stream_direct.js.");
 }
 
 function stop() {
-  if (!isRunning) return;
-  isRunning = false;
   if (timer) clearInterval(timer);
   timer = null;
-  console.log("⏸️ Real-time Telemetry Auto-Streamer paused");
+  isRunning = false;
 }
 
 function getStatus() {
   return {
-    isRunning,
-    tickCount,
-    intervalSeconds: 3,
+    isRunning: false,
+    tickCount: 0,
+    intervalSeconds: 0,
+    disabled: true,
   };
 }
 

@@ -14,7 +14,6 @@ INSERT INTO users (name, email, password, organization_id, role_id, status)
 SELECT v.name, v.email, '$2b$10$A5d7oQD2mQ.kP1EqVLe4gOsYqRGwGtRopxRs5R7rr4fKWj3GHxRSy',
        o.id, r.id, 'ACTIVE'
 FROM (VALUES
-    ('Ventrix Super Admin', 'superadmin@ventrix.com', 'VTX', 'SUPER_ADMIN'),
     ('Ventrix Admin',       'admin@ventrix.com',      'VTX', 'VENTRIX_ADMIN'),
     ('Ventrix Engineer',    'engineer@ventrix.com',   'VTX', 'ENGINEER'),
     ('Ventrix Technician',  'tech@ventrix.com',       'VTX', 'TECHNICIAN'),

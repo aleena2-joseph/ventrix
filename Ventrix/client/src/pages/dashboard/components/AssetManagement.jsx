@@ -7,7 +7,6 @@ import {
   getAssets,
   createAsset,
   updateAsset,
-  updateAssetStatus,
 } from "../../../services/assetService";
 import { getTelemetryHistory } from "../../../services/telemetryService";
 
@@ -75,6 +74,17 @@ export default function AssetManagement({ COLORS, Card }) {
 
   useEffect(() => {
     load();
+    const timer = setInterval(() => {
+      // Background silent refresh without re-triggering full loading spinner
+      getAssets()
+        .then((res) => {
+          if (res.success && Array.isArray(res.data)) {
+            setAssets(res.data);
+          }
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
   }, []);
 
   const trains = useMemo(
@@ -157,15 +167,6 @@ export default function AssetManagement({ COLORS, Card }) {
     }
   }
 
-  async function changeStatus(assetCode, status) {
-    const res = await updateAssetStatus(assetCode, status);
-    if (res.success) {
-      setAssets((prev) =>
-        prev.map((a) => (a.asset_code === assetCode ? { ...a, status } : a))
-      );
-    }
-  }
-
   const selected = assets.find((a) => a.asset_code === selectedCode) || null;
 
   return (
@@ -229,6 +230,33 @@ export default function AssetManagement({ COLORS, Card }) {
           ))}
         </SelectPill>
 
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "rgba(16, 185, 129, 0.1)",
+            border: "1px solid rgba(16, 185, 129, 0.25)",
+            color: "#10B981",
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "#10B981",
+              boxShadow: "0 0 8px #10B981",
+              display: "inline-block",
+            }}
+          />
+          Live Simulation Sync
+        </div>
+
         <button
           onClick={openCreate}
           style={{
@@ -272,11 +300,7 @@ export default function AssetManagement({ COLORS, Card }) {
                   <td style={{ padding: "12px 4px" }}>{a.product_name || "—"}</td>
                   <td style={{ padding: "12px 4px" }}>{a.zone || "—"}</td>
                   <td style={{ padding: "12px 4px" }}>
-                    <StatusSelect
-                      COLORS={COLORS}
-                      value={a.status}
-                      onChange={(s) => changeStatus(a.asset_code, s)}
-                    />
+                    <StatusBadge value={a.status} />
                   </td>
                   <td style={{ padding: "12px 4px", textAlign: "right" }}>
                     <button
@@ -379,24 +403,36 @@ function SelectPill({ COLORS, value, onChange, children }) {
   );
 }
 
-function StatusSelect({ COLORS, value, onChange }) {
+function StatusBadge({ value }) {
   const s = STATUS_COLOR[value] || STATUS_COLOR.OPERATIONAL;
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
+    <div
+      title="Automated status from live telemetry simulation"
       style={{
-        background: s.bg, color: s.c, border: `1px solid ${s.c}55`, borderRadius: 20,
-        padding: "4px 10px", fontSize: 12, fontWeight: 500, outline: "none", cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 10px",
+        borderRadius: 20,
+        fontSize: 12,
+        fontWeight: 600,
+        color: s.c,
+        background: s.bg,
+        border: `1px solid ${s.c}44`,
       }}
     >
-      {STATUS_OPTIONS.map((opt) => (
-        <option key={opt} value={opt} style={{ background: COLORS.card, color: COLORS.white }}>
-          {opt}
-        </option>
-      ))}
-    </select>
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: s.c,
+          boxShadow: `0 0 6px ${s.c}`,
+          display: "inline-block",
+        }}
+      />
+      {value || "OPERATIONAL"}
+    </div>
   );
 }
 
@@ -473,12 +509,34 @@ function AssetFormModal({ COLORS, form, setForm, onSubmit, onClose, error, savin
           <FormField COLORS={COLORS} label="Warranty End">
             <input type="date" value={form.warranty_end} onChange={set("warranty_end")} style={textInputStyle(COLORS)} />
           </FormField>
-          <FormField COLORS={COLORS} label="Status">
-            <select value={form.status} onChange={set("status")} style={textInputStyle(COLORS)}>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+          <FormField COLORS={COLORS} label="Live Operational Status">
+            <div
+              style={{
+                ...textInputStyle(COLORS),
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "rgba(255,255,255,0.03)",
+                color: COLORS.muted,
+                fontSize: 12.5,
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: (STATUS_COLOR[form.status] || STATUS_COLOR.OPERATIONAL).c,
+                  boxShadow: `0 0 6px ${(STATUS_COLOR[form.status] || STATUS_COLOR.OPERATIONAL).c}`,
+                }}
+              />
+              <span>
+                <strong style={{ color: (STATUS_COLOR[form.status] || STATUS_COLOR.OPERATIONAL).c }}>
+                  {form.status || "OPERATIONAL"}
+                </strong>{" "}
+                <span style={{ fontSize: 11, color: COLORS.muted }}>(Automated via Live Telemetry)</span>
+              </span>
+            </div>
           </FormField>
 
           <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
@@ -656,7 +714,7 @@ function AssetDetailsDrawer({ COLORS, asset, onClose, onEdit }) {
                         {row.recorded_at ? new Date(row.recorded_at).toLocaleTimeString() : "—"}
                       </span>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                        {row.temperature ?? "—"}°C · {row.pressure ?? "—"} bar · {row.current ?? "—"} A
+                        {row.temperature != null ? `${row.temperature}°C` : "—"} · {row.pressure != null ? `${row.pressure} bar` : "—"} · {row.current != null ? `${row.current} A` : "—"}
                       </span>
                     </div>
                   ))}

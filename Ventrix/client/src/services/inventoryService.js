@@ -14,4 +14,10 @@ export const inventoryService = {
   adjustStock: (data) => api.post("/inventory/stock/adjust", data),
 
   getTransactionsForPart: (partId) => api.get(`/inventory/transactions/${partId}`),
+
+  // Spare Part Requisitions
+  listRequests: (params = {}) => api.get("/inventory/requests", { params }),
+  createRequest: (data) => api.post("/inventory/requests", data),
+  approveRequest: (id, data = {}) => api.patch(`/inventory/requests/${id}/approve`, data),
+  rejectRequest: (id, data = {}) => api.patch(`/inventory/requests/${id}/reject`, data),
 };

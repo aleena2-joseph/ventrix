@@ -8,6 +8,10 @@ const {
   getStockForPart,
   adjustStock,
   getTransactionsForPart,
+  listPartRequests,
+  createPartRequest,
+  approvePartRequest,
+  rejectPartRequest,
 } = require("../controllers/inventoryController");
 const { verifyToken } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/roles");
@@ -20,6 +24,12 @@ router.get("/parts", requirePermission("inventory.view"), getPartsWithStock);
 router.get("/parts/:id", requirePermission("inventory.view"), parts.getById);
 router.get("/stock/:partId", requirePermission("inventory.view"), getStockForPart);
 router.get("/transactions/:partId", requirePermission("inventory.view"), getTransactionsForPart);
+
+// Spare Part Requests:
+router.get("/requests", requirePermission("inventory.view"), listPartRequests);
+router.post("/requests", createPartRequest);
+router.patch("/requests/:id/approve", requirePermission("inventory.manage"), approvePartRequest);
+router.patch("/requests/:id/reject", requirePermission("inventory.manage"), rejectPartRequest);
 
 // Writes: Require inventory.manage
 router.post("/categories", requirePermission("inventory.manage"), categories.create);

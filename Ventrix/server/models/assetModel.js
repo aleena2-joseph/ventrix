@@ -41,7 +41,6 @@ const WRITABLE_FIELDS = [
   "product_id",
   "coach_id",
   "zone",
-  "status",
   "install_date",
   "serial_number",
   "warranty_start",

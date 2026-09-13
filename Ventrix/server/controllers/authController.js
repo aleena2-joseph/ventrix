@@ -12,17 +12,34 @@ const {
 const DEFAULT_ORG_CODE = "VTX";
 const DEFAULT_ROLE_NAME = "TECHNICIAN";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const register = async (req, res) => {
   try {
     const { name, email, password, organizationId, roleId } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "All fields are required" });
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    const trimmedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+
+    if (!trimmedName || !trimmedEmail || !password) {
+      return res.status(400).json({ success: false, message: "Name, email, and password are required" });
     }
 
-    const existingUser = await findUserByEmail(email);
+    if (trimmedName.length < 2 || trimmedName.length > 100) {
+      return res.status(400).json({ success: false, message: "Name must be between 2 and 100 characters" });
+    }
+
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      return res.status(400).json({ success: false, message: "Invalid email address format" });
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters long" });
+    }
+
+    const existingUser = await findUserByEmail(trimmedEmail);
     if (existingUser) {
-      return res.status(400).json({ message: "Email already exists" });
+      return res.status(400).json({ success: false, message: "Email already exists" });
     }
 
     let orgId = organizationId;
@@ -38,12 +55,12 @@ const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await createUser(name, email, hashedPassword, orgId, rId);
+    const user = await createUser(trimmedName, trimmedEmail, hashedPassword, orgId, rId);
 
-    res.status(201).json({ message: "User Registered Successfully", user });
+    res.status(201).json({ success: true, message: "User Registered Successfully", user });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server Error" });
+    console.error("❌ Registration error:", error);
+    res.status(500).json({ success: false, message: "Server Error" });
   }
 };
 

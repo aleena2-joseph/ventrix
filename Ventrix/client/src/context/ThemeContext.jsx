@@ -46,10 +46,14 @@ export function ThemeProvider({ children }) {
       sidebar: isDark ? "#0F172A" : "#FFFFFF",
       card: isDark ? "#131C31" : "#FFFFFF",
       cardInner: isDark ? "#0B1120" : "#F1F5F9",
+      cardHover: isDark ? "#17233D" : "#F8FAFC",
       border: isDark ? "rgba(255, 255, 255, 0.08)" : "#E2E8F0",
       borderHover: isDark ? "rgba(14, 165, 233, 0.4)" : "#0EA5E9",
+      borderSubtle: isDark ? "rgba(255, 255, 255, 0.05)" : "#F1F5F9",
       text: isDark ? "#F8FAFC" : "#0F172A",
+      textHeading: isDark ? "#FFFFFF" : "#0F172A",
       textMuted: isDark ? "#94A3B8" : "#64748B",
+      textSubtle: isDark ? "#64748B" : "#94A3B8",
       primary: isDark ? "#38BDF8" : "#0284C7",
       primaryBg: isDark ? "rgba(56, 189, 248, 0.12)" : "rgba(2, 132, 199, 0.08)",
       success: isDark ? "#34D399" : "#059669",
@@ -58,12 +62,16 @@ export function ThemeProvider({ children }) {
       warningBg: isDark ? "rgba(251, 191, 36, 0.12)" : "rgba(217, 119, 6, 0.08)",
       danger: isDark ? "#F87171" : "#DC2626",
       dangerBg: isDark ? "rgba(248, 113, 113, 0.12)" : "rgba(220, 38, 38, 0.08)",
+      glassBg: isDark ? "rgba(19, 28, 49, 0.8)" : "rgba(255, 255, 255, 0.9)",
+      glassBorder: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(226, 232, 240, 0.85)",
+      inputBg: isDark ? "#0B1120" : "#FFFFFF",
+      inputBorder: isDark ? "rgba(255, 255, 255, 0.12)" : "#CBD5E1",
       shadow: isDark
-        ? "0 4px 20px -2px rgba(0, 0, 0, 0.4)"
-        : "0 1px 3px 0 rgba(0, 0, 0, 0.07), 0 1px 2px -1px rgba(0, 0, 0, 0.05)",
+        ? "0 4px 20px -2px rgba(0, 0, 0, 0.45)"
+        : "0 4px 20px -2px rgba(0, 0, 0, 0.06), 0 1px 3px 0 rgba(0, 0, 0, 0.04)",
       shadowSm: isDark
         ? "0 2px 8px rgba(0, 0, 0, 0.3)"
-        : "0 1px 2px rgba(0, 0, 0, 0.05)",
+        : "0 1px 3px rgba(0, 0, 0, 0.06)",
     }),
     [isDark]
   );

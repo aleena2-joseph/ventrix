@@ -15,7 +15,7 @@ const STATUS_COLOR = {
 };
 
 const STATUSES = ["OPEN", "ASSIGNED", "IN_PROGRESS", "RESOLVED", "CLOSED"];
-const VENTRIX_ROLES = ["SUPER_ADMIN", "ADMIN", "VENTRIX_ADMIN", "ENGINEER", "TECHNICIAN"];
+const VENTRIX_ROLES = ["ADMIN", "VENTRIX_ADMIN", "ENGINEER", "TECHNICIAN"];
 
 export default function ServiceRequestsPage({ COLORS, Card }) {
   const { role } = useAuth();

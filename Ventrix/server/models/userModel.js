@@ -154,7 +154,7 @@ const countSuperAdmins = async () => {
 // Get permissions for a role or user
 const getPermissionsForRole = async (roleName, roleId) => {
   try {
-    if (roleName === "ADMIN" || roleName === "SUPER_ADMIN" || roleName === "VENTRIX_ADMIN") {
+    if (roleName === "ADMIN" || roleName === "VENTRIX_ADMIN") {
       const all = await pool.query("SELECT permission_key FROM permissions");
       if (all.rows.length > 0) return all.rows.map((r) => r.permission_key);
     }
@@ -176,31 +176,26 @@ const getPermissionsForRole = async (roleName, roleId) => {
   const DEFAULTS = {
     ADMIN: ["*"],
     VENTRIX_ADMIN: ["*"],
-    SUPER_ADMIN: ["*"],
     VENTRIX_ADMIN: [
       "dashboard.view", "assets.view", "assets.manage",
       "telemetry.view", "alerts.view", "alerts.manage",
-      "maintenance.view", "maintenance.manage", "service_requests.view",
-      "service_requests.create", "service_requests.manage", "inventory.manage",
+      "maintenance.view", "maintenance.manage", "inventory.manage",
       "users.manage", "settings.manage"
     ],
     ADMIN: [
       "dashboard.view", "assets.view", "assets.manage",
       "telemetry.view", "alerts.view", "alerts.manage",
-      "maintenance.view", "maintenance.manage", "service_requests.view",
-      "service_requests.create", "service_requests.manage", "inventory.manage",
+      "maintenance.view", "maintenance.manage", "inventory.manage",
       "users.manage", "settings.manage"
     ],
     ENGINEER: [
       "dashboard.view", "assets.view", "assets.manage",
       "telemetry.view", "alerts.view",
-      "maintenance.view", "maintenance.manage", "service_requests.view",
-      "service_requests.create", "inventory.manage"
+      "maintenance.view", "maintenance.manage", "inventory.manage"
     ],
     TECHNICIAN: [
       "dashboard.view", "assets.view", "telemetry.view",
-      "maintenance.view", "maintenance.manage", "service_requests.view",
-      "service_requests.create"
+      "maintenance.view", "maintenance.manage"
     ],
   };
 

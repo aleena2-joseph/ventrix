@@ -104,8 +104,9 @@ export default function TelemetryPage({ telemetry: initialTelemetry, telemetryRo
               operatingHours: target.operating_hours != null ? Number(target.operating_hours) : null,
               vibration: target.vibration != null ? Number(target.vibration) : null,
               filterDP: target.raw_payload?.telemetry?.filterDP != null ? Number(target.raw_payload.telemetry.filterDP) : null,
-              assetState: target.asset_state || "NOMINAL",
-              healthScore: target.predicted_health_score != null ? Number(target.predicted_health_score) : 95,
+              assetState: target.asset_state || "UNKNOWN",
+              healthScore: target.predicted_health_score != null ? Number(target.predicted_health_score) : null,
+              recordedAt: target.recorded_at || null,
             });
             setLastUpdated(new Date());
           }
@@ -124,68 +125,106 @@ export default function TelemetryPage({ telemetry: initialTelemetry, telemetryRo
     };
   }, [selectedAssetCode]);
 
+  // Compute actual live stream state dynamically based on packet recency
+  const streamStatus = useMemo(() => {
+    if (!liveData?.recordedAt) {
+      return {
+        label: "AWAITING TELEMETRY STREAM",
+        color: "#64748B",
+        bg: "rgba(100, 116, 139, 0.15)",
+        pulse: false,
+        subtext: "Waiting for simulator to connect and stream readings",
+      };
+    }
+    const ageMs = Date.now() - new Date(liveData.recordedAt).getTime();
+    if (ageMs < 15000) {
+      return {
+        label: "LIVE STREAM ACTIVE",
+        color: "#10B981",
+        bg: "rgba(16, 185, 129, 0.15)",
+        pulse: true,
+        subtext: `Real-time sensor stream arriving (${new Date(liveData.recordedAt).toLocaleTimeString()})`,
+      };
+    }
+    const ageSec = Math.round(ageMs / 1000);
+    const timeAgoStr =
+      ageSec < 60
+        ? `${ageSec}s ago`
+        : ageSec < 3600
+        ? `${Math.round(ageSec / 60)}m ago`
+        : `${Math.round(ageSec / 3600)}h ago`;
+
+    return {
+      label: "STREAM IDLE / OFFLINE",
+      color: "#F59E0B",
+      bg: "rgba(245, 158, 11, 0.15)",
+      pulse: false,
+      subtext: `Last packet received: ${timeAgoStr} (${new Date(liveData.recordedAt).toLocaleTimeString()})`,
+    };
+  }, [liveData?.recordedAt, lastUpdated]);
+
   const cards = [
     {
       title: "Supply Air Temperature",
       value: liveData?.temperature != null ? `${liveData.temperature.toFixed(1)}°C` : "—",
-      status: liveData?.temperature > 26 ? "High Temp" : liveData?.temperature < 18 ? "Low Temp" : "Optimal",
-      statusColor: liveData?.temperature > 26 ? "#EF4444" : "#10B981",
+      status: liveData?.temperature != null ? (liveData.temperature > 26 ? "High Temp" : liveData.temperature < 18 ? "Low Temp" : "Optimal") : "Awaiting Data",
+      statusColor: liveData?.temperature != null ? (liveData.temperature > 26 ? "#EF4444" : "#10B981") : "#64748B",
       icon: Thermometer,
       unit: "°C",
     },
     {
       title: "Refrigerant Pressure",
       value: liveData?.pressure != null ? `${liveData.pressure.toFixed(2)} bar` : "—",
-      status: liveData?.pressure < 3.8 ? "Low Pressure" : "Nominal",
-      statusColor: liveData?.pressure < 3.8 ? "#F59E0B" : "#10B981",
+      status: liveData?.pressure != null ? (liveData.pressure < 3.8 ? "Low Pressure" : "Nominal") : "Awaiting Data",
+      statusColor: liveData?.pressure != null ? (liveData.pressure < 3.8 ? "#F59E0B" : "#10B981") : "#64748B",
       icon: Gauge,
       unit: "bar",
     },
     {
       title: "Compressor Current",
       value: liveData?.current != null ? `${liveData.current.toFixed(1)} A` : "—",
-      status: liveData?.current > 18 ? "High Current" : "Normal Load",
-      statusColor: liveData?.current > 18 ? "#EF4444" : "#10B981",
+      status: liveData?.current != null ? (liveData.current > 18 ? "High Current" : "Normal Load") : "Awaiting Data",
+      statusColor: liveData?.current != null ? (liveData.current > 18 ? "#EF4444" : "#10B981") : "#64748B",
       icon: Zap,
       unit: "A",
     },
     {
       title: "Supply Line Voltage",
       value: liveData?.voltage != null ? `${Math.round(liveData.voltage)} V` : "—",
-      status: liveData?.voltage < 380 ? "Voltage Sag" : "Balanced",
-      statusColor: "#10B981",
+      status: liveData?.voltage != null ? (liveData.voltage < 380 ? "Voltage Sag" : "Balanced") : "Awaiting Data",
+      statusColor: liveData?.voltage != null ? "#10B981" : "#64748B",
       icon: BatteryCharging,
       unit: "V",
     },
     {
       title: "Coach Humidity",
       value: liveData?.humidity != null ? `${Math.round(liveData.humidity)}%` : "—",
-      status: "Comfort Band",
-      statusColor: "#06B6D4",
+      status: liveData?.humidity != null ? "Comfort Band" : "Awaiting Data",
+      statusColor: liveData?.humidity != null ? "#06B6D4" : "#64748B",
       icon: Droplets,
       unit: "%",
     },
     {
       title: "Total Power Draw",
       value: liveData?.power != null ? `${liveData.power.toFixed(2)} kW` : "—",
-      status: "Steady Load",
-      statusColor: "#EC4899",
+      status: liveData?.power != null ? "Steady Load" : "Awaiting Data",
+      statusColor: liveData?.power != null ? "#EC4899" : "#64748B",
       icon: Zap,
       unit: "kW",
     },
     {
       title: "Cumulative Operating Hours",
       value: liveData?.operatingHours != null ? `${Math.round(liveData.operatingHours)} hrs` : "—",
-      status: "Logged",
-      statusColor: "#8B5CF6",
+      status: liveData?.operatingHours != null ? "Logged" : "Awaiting Data",
+      statusColor: liveData?.operatingHours != null ? "#8B5CF6" : "#64748B",
       icon: Clock,
       unit: "hrs",
     },
     {
       title: "Filter Differential Pressure",
       value: liveData?.filterDP != null ? `${liveData.filterDP} Pa` : (liveData?.vibration != null ? `${liveData.vibration} Pa` : "—"),
-      status: (liveData?.filterDP || 0) > 250 ? "Filter Clogged" : "Airflow Normal",
-      statusColor: (liveData?.filterDP || 0) > 250 ? "#F59E0B" : "#10B981",
+      status: (liveData?.filterDP != null || liveData?.vibration != null) ? ((liveData?.filterDP || liveData?.vibration) > 250 ? "Filter Clogged" : "Airflow Normal") : "Awaiting Data",
+      statusColor: (liveData?.filterDP != null || liveData?.vibration != null) ? ((liveData?.filterDP || 0) > 250 ? "#F59E0B" : "#10B981") : "#64748B",
       icon: Waves,
       unit: "Pa",
     },
@@ -193,7 +232,7 @@ export default function TelemetryPage({ telemetry: initialTelemetry, telemetryRo
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Header with Live Ticker & Asset Selector */}
+      {/* Header with Dynamic Stream Status & Asset Selector */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -202,19 +241,28 @@ export default function TelemetryPage({ telemetry: initialTelemetry, telemetryRo
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 6,
-                padding: "3px 8px",
+                padding: "3px 9px",
                 borderRadius: 6,
-                background: "rgba(16,185,129,0.15)",
-                color: "#10B981",
+                background: streamStatus.bg,
+                color: streamStatus.color,
                 fontSize: 11,
                 fontWeight: 800,
+                letterSpacing: "0.03em",
               }}
             >
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#10B981", animation: "pulse 1.5s infinite" }} />
-              LIVE TELEMETRY STREAMING
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: streamStatus.color,
+                  animation: streamStatus.pulse ? "pulse 1.5s infinite" : "none",
+                }}
+              />
+              {streamStatus.label}
             </span>
-            <span style={{ fontSize: 12, color: "#64748B" }}>
-              Last Signal: {lastUpdated.toLocaleTimeString()}
+            <span style={{ fontSize: 12, color: "#94A3B8" }}>
+              {streamStatus.subtext}
             </span>
           </div>
           <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 24, fontWeight: 800, color: "#fff", margin: 0 }}>
@@ -242,16 +290,10 @@ export default function TelemetryPage({ telemetry: initialTelemetry, telemetryRo
               }}
             >
               {assets.length === 0 ? (
-                <>
-                  <option value="HVAC-001">HVAC-001 — Coach A1</option>
-                  <option value="HVAC-002">HVAC-002 — Coach A2</option>
-                  <option value="HVAC-003">HVAC-003 — Coach B1</option>
-                  <option value="HVAC-004">HVAC-004 — Coach B2</option>
-                  <option value="HVAC-005">HVAC-005 — Coach C1</option>
-                </>
+                <option value="">No registered HVAC units found</option>
               ) : (
                 assets.map((a) => (
-                  <option key={a.asset_code} value={a.asset_code}>
+                  <option key={a.asset_code || a.id} value={a.asset_code}>
                     {a.asset_code} — {a.name || "HVAC Unit"}
                   </option>
                 ))

@@ -9,7 +9,6 @@ const CUSTOMER_ROLES = [];
 const DEFAULT_ROLE_PERMISSIONS = {
   ADMIN: ["*"],
   VENTRIX_ADMIN: ["*"],
-  SUPER_ADMIN: ["*"],
   ENGINEER: [
     "dashboard.view",
     "assets.view",
@@ -19,8 +18,6 @@ const DEFAULT_ROLE_PERMISSIONS = {
     "alerts.view",
     "maintenance.view",
     "maintenance.manage",
-    "service_requests.view",
-    "service_requests.create",
     "inventory.view",
     "inventory.manage",
     "products.manage",
@@ -34,8 +31,6 @@ const DEFAULT_ROLE_PERMISSIONS = {
     "alerts.view",
     "maintenance.view",
     "maintenance.manage",
-    "service_requests.view",
-    "service_requests.create",
     "inventory.view",
     "inventory.manage",
     "products.manage",
@@ -131,7 +126,7 @@ export function AuthProvider({ children }) {
   const can = useCallback(
     (permissionKey) => {
       if (!permissionKey) return true;
-      if (role === "ADMIN" || role === "SUPER_ADMIN" || role === "VENTRIX_ADMIN") return true;
+      if (role === "ADMIN" || role === "VENTRIX_ADMIN") return true;
 
       // Check DB dynamic permissions if present
       if (userPermissions.length > 0) {

@@ -52,12 +52,29 @@ const getUserById = async (req, res) => {
   }
 };
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // POST /api/users — Create a user
 const createUser = async (req, res) => {
   try {
     const { name, email, password, organizationId, roleId } = req.body;
-    if (!name || !email || !password || !roleId) {
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    const trimmedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+
+    if (!trimmedName || !trimmedEmail || !password || !roleId) {
       return res.status(400).json({ success: false, message: "Name, email, password, and role are required" });
+    }
+
+    if (trimmedName.length < 2 || trimmedName.length > 100) {
+      return res.status(400).json({ success: false, message: "Name must be between 2 and 100 characters" });
+    }
+
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      return res.status(400).json({ success: false, message: "Invalid email address format" });
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters long" });
     }
 
     let targetOrgId = organizationId ? Number(organizationId) : null;
@@ -86,13 +103,13 @@ const createUser = async (req, res) => {
       }
     }
 
-    const existing = await userModel.findUserByEmail(email);
+    const existing = await userModel.findUserByEmail(trimmedEmail);
     if (existing) {
       return res.status(400).json({ success: false, message: "A user with this email already exists" });
     }
 
     const hashed = await bcrypt.hash(password, 10);
-    const user = await userModel.createUser(name.trim(), email.trim().toLowerCase(), hashed, targetOrgId, targetRoleId);
+    const user = await userModel.createUser(trimmedName, trimmedEmail, hashed, targetOrgId, targetRoleId);
 
     const auditModel = require("../models/auditModel");
     await auditModel.logAction({
@@ -128,7 +145,7 @@ const updateUser = async (req, res) => {
     }
 
     // Protect last active Admin from role changes
-    if ((existing.role_name === "ADMIN" || existing.role_name === "SUPER_ADMIN") && roleId && Number(roleId) !== existing.role_id) {
+    if ((existing.role_name === "ADMIN" || existing.role_name === "VENTRIX_ADMIN") && roleId && Number(roleId) !== existing.role_id) {
       const adminCount = await userModel.countSuperAdmins();
       if (adminCount <= 1) {
         return res.status(403).json({
@@ -139,9 +156,18 @@ const updateUser = async (req, res) => {
     }
 
     const fields = {};
-    if (name) fields.name = name.trim();
+    if (name) {
+      const trimmedName = name.trim();
+      if (trimmedName.length < 2 || trimmedName.length > 100) {
+        return res.status(400).json({ success: false, message: "Name must be between 2 and 100 characters" });
+      }
+      fields.name = trimmedName;
+    }
     if (email) {
       const emailLower = email.trim().toLowerCase();
+      if (!EMAIL_REGEX.test(emailLower)) {
+        return res.status(400).json({ success: false, message: "Invalid email address format" });
+      }
       if (emailLower !== existing.email.toLowerCase()) {
         const emailCheck = await userModel.findUserByEmail(emailLower);
         if (emailCheck && emailCheck.id !== id) {
@@ -209,7 +235,7 @@ const updateUserStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: "You cannot deactivate your own account" });
     }
 
-    if (status === "INACTIVE" && (target.role_name === "ADMIN" || target.role_name === "SUPER_ADMIN")) {
+    if (status === "INACTIVE" && (target.role_name === "ADMIN" || target.role_name === "VENTRIX_ADMIN")) {
       const adminCount = await userModel.countSuperAdmins();
       if (adminCount <= 1) {
         return res.status(403).json({
@@ -274,7 +300,7 @@ const deleteUser = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied to user in another organization" });
     }
 
-    if (target.role_name === "ADMIN" || target.role_name === "SUPER_ADMIN") {
+    if (target.role_name === "ADMIN" || target.role_name === "VENTRIX_ADMIN") {
       const adminCount = await userModel.countSuperAdmins();
       if (adminCount <= 1) {
         return res.status(403).json({

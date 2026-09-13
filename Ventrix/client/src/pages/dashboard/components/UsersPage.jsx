@@ -21,6 +21,7 @@ import Button from "../../../components/common/Button";
 import { userService } from "../../../services/userService";
 import { roleService } from "../../../services/roleService";
 import { useAuth } from "../../../context/AuthContext";
+import { useTheme } from "../../../context/ThemeContext";
 
 const ROLE_COLORS = {
   ADMIN: { c: "#06B6D4", bg: "rgba(6, 182, 212, 0.15)", label: "Admin" },
@@ -33,6 +34,7 @@ const ROLE_BADGES = ROLE_COLORS;
 
 export default function UsersPage() {
   const { user: currentUser, can } = useAuth();
+  const { isDark, tokens: t } = useTheme();
 
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -300,10 +302,10 @@ export default function UsersPage() {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
         <div>
-          <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 24, fontWeight: 800, color: "#fff", margin: 0 }}>
+          <h1 style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontSize: 24, fontWeight: 800, color: t.textHeading, margin: 0 }}>
             User Management
           </h1>
-          <p style={{ color: "#94A3B8", fontSize: 13.5, margin: "4px 0 0 0" }}>
+          <p style={{ color: t.textMuted, fontSize: 13.5, margin: "4px 0 0 0" }}>
             Manage platform accounts, assigned system roles, and account security.
           </p>
         </div>
@@ -344,8 +346,8 @@ export default function UsersPage() {
           style={{
             padding: "12px 16px",
             borderRadius: 10,
-            background: "#EF44441A",
-            border: "1px solid #EF444444",
+            background: "rgba(239, 68, 68, 0.12)",
+            border: "1px solid rgba(239, 68, 68, 0.35)",
             color: "#EF4444",
             display: "flex",
             alignItems: "center",
@@ -363,12 +365,12 @@ export default function UsersPage() {
         <Card hoverEffect={false}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Total Users</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#fff", marginTop: 4, fontFamily: "'Outfit', sans-serif" }}>
+              <div style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Users</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: t.textHeading, marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}>
                 {stats.total}
               </div>
             </div>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#06B6D41A", border: "1px solid #06B6D433", display: "flex", alignItems: "center", justifyContent: "center", color: "#06B6D4" }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(6, 182, 212, 0.15)", border: "1px solid rgba(6, 182, 212, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#06B6D4" }}>
               <UsersIcon size={20} />
             </div>
           </div>
@@ -377,12 +379,12 @@ export default function UsersPage() {
         <Card hoverEffect={false}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Active Accounts</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#22C55E", marginTop: 4, fontFamily: "'Outfit', sans-serif" }}>
+              <div style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Active Accounts</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: "#10B981", marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}>
                 {stats.active}
               </div>
             </div>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#22C55E1A", border: "1px solid #22C55E33", display: "flex", alignItems: "center", justifyContent: "center", color: "#22C55E" }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(16, 185, 129, 0.15)", border: "1px solid rgba(16, 185, 129, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10B981" }}>
               <UserCheck size={20} />
             </div>
           </div>
@@ -391,12 +393,12 @@ export default function UsersPage() {
         <Card hoverEffect={false}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Inactive Accounts</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#94A3B8", marginTop: 4, fontFamily: "'Outfit', sans-serif" }}>
+              <div style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Inactive Accounts</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: t.textMuted, marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}>
                 {stats.inactive}
               </div>
             </div>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#94A3B81A", border: "1px solid #94A3B833", display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8" }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(148, 163, 184, 0.15)", border: "1px solid rgba(148, 163, 184, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8" }}>
               <UserX size={20} />
             </div>
           </div>
@@ -405,12 +407,12 @@ export default function UsersPage() {
         <Card hoverEffect={false}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Administrators</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#EC4899", marginTop: 4, fontFamily: "'Outfit', sans-serif" }}>
+              <div style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Administrators</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: "#EC4899", marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}>
                 {stats.adminCount}
               </div>
             </div>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EC48991A", border: "1px solid #EC489933", display: "flex", alignItems: "center", justifyContent: "center", color: "#EC4899" }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(236, 72, 153, 0.15)", border: "1px solid rgba(236, 72, 153, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#EC4899" }}>
               <ShieldCheck size={20} />
             </div>
           </div>
@@ -424,7 +426,7 @@ export default function UsersPage() {
             <div style={{ position: "relative", width: "100%" }}>
               <Search
                 size={16}
-                color="#64748B"
+                color={t.textMuted}
                 style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}
               />
               <input
@@ -434,9 +436,9 @@ export default function UsersPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 style={{
                   width: "100%",
-                  background: "#040914",
-                  color: "#fff",
-                  border: "1px solid #1E293B",
+                  background: t.cardInner,
+                  color: t.text,
+                  border: `1px solid ${t.border}`,
                   borderRadius: 8,
                   padding: "8px 12px 8px 36px",
                   fontSize: 13,
@@ -453,9 +455,9 @@ export default function UsersPage() {
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
               style={{
-                background: "#040914",
-                color: "#E2E8F0",
-                border: "1px solid #1E293B",
+                background: t.cardInner,
+                color: t.text,
+                border: `1px solid ${t.border}`,
                 borderRadius: 8,
                 padding: "8px 12px",
                 fontSize: 13,
@@ -473,9 +475,9 @@ export default function UsersPage() {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               style={{
-                background: "#040914",
-                color: "#E2E8F0",
-                border: "1px solid #1E293B",
+                background: t.cardInner,
+                color: t.text,
+                border: `1px solid ${t.border}`,
                 borderRadius: 8,
                 padding: "8px 12px",
                 fontSize: 13,
@@ -495,7 +497,7 @@ export default function UsersPage() {
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
             <thead>
-              <tr style={{ textAlign: "left", color: "#64748B", fontSize: 12, borderBottom: "1px solid #1E293B" }}>
+              <tr style={{ textAlign: "left", color: t.textMuted, fontSize: 12, borderBottom: `1px solid ${t.border}` }}>
                 <th style={{ padding: "12px 10px" }}>User</th>
                 <th style={{ padding: "12px 10px" }}>Role</th>
                 <th style={{ padding: "12px 10px" }}>Status</th>
@@ -505,12 +507,12 @@ export default function UsersPage() {
             </thead>
             <tbody>
               {users.map((u) => {
-                const roleMeta = ROLE_COLORS[u.role_name] || { c: "#94A3B8", bg: "#94A3B81A", label: u.role_name };
+                const roleMeta = ROLE_COLORS[u.role_name] || { c: t.textMuted, bg: `${t.textMuted}1A`, label: u.role_name };
                 const initial = u.name?.trim().charAt(0).toUpperCase() || "?";
                 const isSelf = u.id === currentUser?.id;
 
                 return (
-                  <tr key={u.id} style={{ borderBottom: "1px solid #1E293B33" }}>
+                  <tr key={u.id} style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
                     <td style={{ padding: "14px 10px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <div
@@ -533,15 +535,15 @@ export default function UsersPage() {
                           {initial}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 600, color: "#F8FAFC", display: "flex", alignItems: "center", gap: 6 }}>
+                          <div style={{ fontWeight: 600, color: t.textHeading, display: "flex", alignItems: "center", gap: 6 }}>
                             {u.name}
                             {isSelf && (
-                              <span style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 4, background: "#06B6D422", color: "#06B6D4" }}>
+                              <span style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 4, background: "rgba(6, 182, 212, 0.15)", color: "#06B6D4" }}>
                                 You
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{u.email}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{u.email}</div>
                         </div>
                       </div>
                     </td>
@@ -570,20 +572,20 @@ export default function UsersPage() {
                           borderRadius: 20,
                           fontSize: 11.5,
                           fontWeight: 500,
-                          color: u.status === "ACTIVE" ? "#22C55E" : "#EF4444",
-                          background: u.status === "ACTIVE" ? "#22C55E1A" : "#EF444419",
-                          border: `1px solid ${u.status === "ACTIVE" ? "#22C55E33" : "#EF444433"}`,
+                          color: u.status === "ACTIVE" ? "#10B981" : "#EF4444",
+                          background: u.status === "ACTIVE" ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.12)",
+                          border: `1px solid ${u.status === "ACTIVE" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
                           display: "inline-flex",
                           alignItems: "center",
                           gap: 5,
                         }}
                       >
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: u.status === "ACTIVE" ? "#22C55E" : "#EF4444" }} />
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: u.status === "ACTIVE" ? "#10B981" : "#EF4444" }} />
                         {u.status}
                       </span>
                     </td>
 
-                    <td style={{ padding: "14px 10px", color: "#64748B", fontSize: 12.5 }}>
+                    <td style={{ padding: "14px 10px", color: t.textMuted, fontSize: 12.5 }}>
                       {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
                     </td>
 
@@ -596,10 +598,10 @@ export default function UsersPage() {
                             onClick={() => openEditModal(u)}
                             style={{
                               background: "transparent",
-                              border: "1px solid #1E293B",
+                              border: `1px solid ${t.border}`,
                               borderRadius: 6,
                               padding: "6px 8px",
-                              color: "#94A3B8",
+                              color: t.textMuted,
                               cursor: "pointer",
                               display: "inline-flex",
                               alignItems: "center",
@@ -618,10 +620,10 @@ export default function UsersPage() {
                             }}
                             style={{
                               background: "transparent",
-                              border: "1px solid #1E293B",
+                              border: `1px solid ${t.border}`,
                               borderRadius: 6,
                               padding: "6px 8px",
-                              color: "#94A3B8",
+                              color: t.textMuted,
                               cursor: "pointer",
                               display: "inline-flex",
                               alignItems: "center",
@@ -637,10 +639,10 @@ export default function UsersPage() {
                             onClick={() => handleToggleStatus(u)}
                             style={{
                               background: "transparent",
-                              border: "1px solid #1E293B",
+                              border: `1px solid ${t.border}`,
                               borderRadius: 6,
                               padding: "6px 8px",
-                              color: isSelf ? "#334155" : u.status === "ACTIVE" ? "#F59E0B" : "#22C55E",
+                              color: isSelf ? t.textSubtle : u.status === "ACTIVE" ? "#F59E0B" : "#10B981",
                               cursor: isSelf ? "not-allowed" : "pointer",
                               display: "inline-flex",
                               alignItems: "center",
@@ -656,10 +658,10 @@ export default function UsersPage() {
                             onClick={() => setDeletingUser(u)}
                             style={{
                               background: "transparent",
-                              border: "1px solid #1E293B",
+                              border: `1px solid ${t.border}`,
                               borderRadius: 6,
                               padding: "6px 8px",
-                              color: isSelf ? "#334155" : "#EF4444",
+                              color: isSelf ? t.textSubtle : "#EF4444",
                               cursor: isSelf ? "not-allowed" : "pointer",
                               display: "inline-flex",
                               alignItems: "center",
@@ -695,7 +697,7 @@ export default function UsersPage() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(3,7,18,0.75)",
+            background: isDark ? "rgba(3,7,18,0.8)" : "rgba(15,23,42,0.45)",
             backdropFilter: "blur(6px)",
             display: "flex",
             alignItems: "center",
@@ -708,35 +710,35 @@ export default function UsersPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#0B1220",
-              border: "1px solid #1E293B",
+              background: t.card,
+              border: `1px solid ${t.border}`,
               borderRadius: 16,
               padding: 28,
               width: 480,
               maxWidth: "100%",
-              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.7)",
+              boxShadow: t.shadow,
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 18, color: "#fff" }}>
+              <div style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontWeight: 700, fontSize: 18, color: t.textHeading }}>
                 Add New User
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}
+                style={{ background: "transparent", border: "none", color: t.textMuted, cursor: "pointer" }}
               >
                 <X size={20} />
               </button>
             </div>
 
             {formError && (
-              <div style={{ padding: 10, borderRadius: 8, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 12.5, marginBottom: 16 }}>
+              <div style={{ padding: 10, borderRadius: 8, background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.35)", color: "#EF4444", fontSize: 12.5, marginBottom: 16 }}>
                 {formError}
               </div>
             )}
 
             <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: t.textMuted }}>
                 Full Name *
                 <input
                   type="text"
@@ -744,11 +746,11 @@ export default function UsersPage() {
                   placeholder="e.g. Rahul Sharma"
                   value={createForm.name}
                   onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
                 />
               </label>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: t.textMuted }}>
                 Email Address *
                 <input
                   type="email"
@@ -756,11 +758,11 @@ export default function UsersPage() {
                   placeholder="e.g. rahul.sharma@example.com"
                   value={createForm.email}
                   onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
                 />
               </label>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: t.textMuted }}>
                 Initial Password *
                 <input
                   type="password"
@@ -768,17 +770,17 @@ export default function UsersPage() {
                   placeholder="Min 6 characters"
                   value={createForm.password}
                   onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
                 />
               </label>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: t.textMuted }}>
                 Assigned Role *
                 <select
                   required
                   value={createForm.roleId}
                   onChange={(e) => setCreateForm((p) => ({ ...p, roleId: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
                 >
                   <option value="">Select Role...</option>
                   {roles.map((r) => (
@@ -804,7 +806,7 @@ export default function UsersPage() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(3,7,18,0.75)",
+            background: isDark ? "rgba(3,7,18,0.8)" : "rgba(15,23,42,0.45)",
             backdropFilter: "blur(6px)",
             display: "flex",
             alignItems: "center",
@@ -817,63 +819,63 @@ export default function UsersPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#0B1220",
-              border: "1px solid #1E293B",
+              background: t.card,
+              border: `1px solid ${t.border}`,
               borderRadius: 16,
               padding: 28,
               width: 480,
               maxWidth: "100%",
-              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.7)",
+              boxShadow: t.shadow,
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 18, color: "#fff" }}>
+              <div style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontWeight: 700, fontSize: 18, color: t.textHeading }}>
                 Edit User: {editingUser.name}
               </div>
               <button
                 onClick={() => setEditingUser(null)}
-                style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}
+                style={{ background: "transparent", border: "none", color: t.textMuted, cursor: "pointer" }}
               >
                 <X size={20} />
               </button>
             </div>
 
             {formError && (
-              <div style={{ padding: 10, borderRadius: 8, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 12.5, marginBottom: 16 }}>
+              <div style={{ padding: 10, borderRadius: 8, background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.35)", color: "#EF4444", fontSize: 12.5, marginBottom: 16 }}>
                 {formError}
               </div>
             )}
 
             <form onSubmit={handleEdit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: t.textMuted }}>
                 Full Name *
                 <input
                   type="text"
                   required
                   value={editForm.name}
                   onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
                 />
               </label>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: t.textMuted }}>
                 Email Address *
                 <input
                   type="email"
                   required
                   value={editForm.email}
                   onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
                 />
               </label>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: t.textMuted }}>
                 Role *
                 <select
                   required
                   value={editForm.roleId}
                   onChange={(e) => setEditForm((p) => ({ ...p, roleId: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
                 >
                   {roles.map((r) => (
                     <option key={r.id} value={r.id}>{r.name}</option>
@@ -881,12 +883,12 @@ export default function UsersPage() {
                 </select>
               </label>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: t.textMuted }}>
                 Status
                 <select
                   value={editForm.status}
                   onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))}
-                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
                 >
                   <option value="ACTIVE">Active</option>
                   <option value="INACTIVE">Inactive</option>
@@ -910,7 +912,7 @@ export default function UsersPage() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(3,7,18,0.75)",
+            background: isDark ? "rgba(3,7,18,0.8)" : "rgba(15,23,42,0.45)",
             backdropFilter: "blur(6px)",
             display: "flex",
             alignItems: "center",
@@ -923,33 +925,33 @@ export default function UsersPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#0B1220",
-              border: "1px solid #1E293B",
+              background: t.card,
+              border: `1px solid ${t.border}`,
               borderRadius: 16,
               padding: 28,
               width: 420,
               maxWidth: "100%",
-              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.7)",
+              boxShadow: t.shadow,
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 17, color: "#fff" }}>
+              <div style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontWeight: 700, fontSize: 17, color: t.textHeading }}>
                 Reset Password
               </div>
               <button
                 onClick={() => setResettingUser(null)}
-                style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}
+                style={{ background: "transparent", border: "none", color: t.textMuted, cursor: "pointer" }}
               >
                 <X size={18} />
               </button>
             </div>
 
-            <p style={{ fontSize: 13, color: "#94A3B8", marginTop: 0, marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: t.textMuted, marginTop: 0, marginBottom: 16 }}>
               Enter a new temporary password for <strong>{resettingUser.name}</strong> ({resettingUser.email}).
             </p>
 
             {formError && (
-              <div style={{ padding: 10, borderRadius: 8, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 12.5, marginBottom: 14 }}>
+              <div style={{ padding: 10, borderRadius: 8, background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.35)", color: "#EF4444", fontSize: 12.5, marginBottom: 14 }}>
                 {formError}
               </div>
             )}
@@ -961,7 +963,7 @@ export default function UsersPage() {
                 placeholder="New Password (min 6 characters)"
                 value={resetPasswordVal}
                 onChange={(e) => setResetPasswordVal(e.target.value)}
-                style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                style={{ background: t.cardInner, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, outline: "none" }}
               />
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
@@ -981,7 +983,7 @@ export default function UsersPage() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(3,7,18,0.75)",
+            background: isDark ? "rgba(3,7,18,0.8)" : "rgba(15,23,42,0.45)",
             backdropFilter: "blur(6px)",
             display: "flex",
             alignItems: "center",
@@ -994,25 +996,25 @@ export default function UsersPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#0B1220",
-              border: "1px solid #EF444444",
+              background: t.card,
+              border: "1px solid rgba(239, 68, 68, 0.35)",
               borderRadius: 16,
               padding: 28,
               width: 440,
               maxWidth: "100%",
-              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.7)",
+              boxShadow: t.shadow,
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 12, color: "#EF4444", marginBottom: 14 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EF444419", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(239, 68, 68, 0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Trash2 size={20} />
               </div>
-              <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 18 }}>
+              <div style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontWeight: 700, fontSize: 18 }}>
                 Delete User Account?
               </div>
             </div>
 
-            <p style={{ fontSize: 13.5, color: "#94A3B8", lineHeight: 1.5, margin: "0 0 20px 0" }}>
+            <p style={{ fontSize: 13.5, color: t.textMuted, lineHeight: 1.5, margin: "0 0 20px 0" }}>
               Are you sure you want to permanently delete <strong>{deletingUser.name}</strong> ({deletingUser.email})? This action cannot be undone.
             </p>
 

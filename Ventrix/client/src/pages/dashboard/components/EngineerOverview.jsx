@@ -34,8 +34,10 @@ export default function EngineerOverview({
   const [workOrders, setWorkOrders] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [inventoryParts, setInventoryParts] = useState([]);
+  const [pendingPartRequests, setPendingPartRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+  const [approvingReqId, setApprovingReqId] = useState(null);
 
   // Quick Assign / Create Work Order Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -60,10 +62,11 @@ export default function EngineerOverview({
   async function loadSupervisorData() {
     setLoading(true);
     try {
-      const [woRes, uRes, invRes] = await Promise.all([
+      const [woRes, uRes, invRes, reqRes] = await Promise.all([
         maintenanceService.listWorkOrders().catch(() => ({ success: false })),
         userService.getTechnicians().catch(() => ({ success: false })),
         inventoryService.listParts().catch(() => ({ success: false })),
+        inventoryService.listRequests({ status: "PENDING" }).catch(() => ({ success: false })),
       ]);
 
       if (woRes?.success && Array.isArray(woRes.data)) {
@@ -75,10 +78,30 @@ export default function EngineerOverview({
       if (invRes?.success && Array.isArray(invRes.data)) {
         setInventoryParts(invRes.data);
       }
+      if (reqRes?.success && Array.isArray(reqRes.data)) {
+        setPendingPartRequests(reqRes.data);
+      }
     } finally {
       setLoading(false);
     }
   }
+
+  const handleQuickApproveRequest = async (req) => {
+    setApprovingReqId(req.id);
+    try {
+      const res = await inventoryService.approveRequest(req.id);
+      if (res?.success) {
+        notify("success", `Approved ${req.quantity}x ${req.part_name}. Stock deducted and issued to job #${req.work_order_id || "general"}.`);
+        loadSupervisorData();
+      } else {
+        notify("error", res?.message || "Failed to approve request.");
+      }
+    } catch (err) {
+      notify("error", err?.response?.data?.message || "Error approving request.");
+    } finally {
+      setApprovingReqId(null);
+    }
+  };
 
   useEffect(() => {
     loadSupervisorData();
@@ -256,6 +279,102 @@ export default function EngineerOverview({
           </div>
         </Card>
       </div>
+
+      {/* PENDING SPARE PART REQUISITION SPOTLIGHT */}
+      {pendingPartRequests.length > 0 && (
+        <div
+          style={{
+            padding: "16px 20px",
+            borderRadius: 14,
+            background: "linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%)",
+            border: "1.5px solid rgba(245, 158, 11, 0.35)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(245,158,11,0.2)", color: "#F59E0B", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Package size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#F8FAFC" }}>
+                  {pendingPartRequests.length} Spare Part Requisition{pendingPartRequests.length > 1 ? "s" : ""} Awaiting Your Approval
+                </div>
+                <div style={{ fontSize: 12, color: "#94A3B8" }}>
+                  Technicians have requested components from depot warehouse. Stock is deducted only upon approval.
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigate && onNavigate("inventory")}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#F59E0B",
+                fontWeight: 700,
+                fontSize: 12.5,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              Open Requisitions Queue →
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
+            {pendingPartRequests.slice(0, 3).map((req) => (
+              <div
+                key={req.id}
+                style={{
+                  background: "#080E1E",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: "#fff" }}>
+                    {req.quantity}x {req.part_name}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#94A3B8" }}>
+                    Requested by <strong>{req.requester_name || "Technician"}</strong> {req.work_order_id ? `for Job #${req.work_order_id}` : ""}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#06B6D4", marginTop: 2 }}>
+                    Depot Stock: <strong>{req.available_stock || 0} {req.unit_of_measure || "pcs"}</strong>
+                  </div>
+                </div>
+
+                <button
+                  disabled={approvingReqId === req.id}
+                  onClick={() => handleQuickApproveRequest(req)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "#10B981",
+                    color: "#000",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {approvingReqId === req.id ? "Deducting..." : "Approve & Issue"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main Supervisor Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 20 }}>

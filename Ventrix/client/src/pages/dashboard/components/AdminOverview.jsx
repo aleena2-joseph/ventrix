@@ -15,14 +15,19 @@ import {
   Plus,
   Layers,
   Sparkles,
+  Gauge,
+  Thermometer,
+  Zap,
+  ChevronRight,
+  Radio,
 } from "lucide-react";
 import Card from "../../../components/common/Card";
 import Button from "../../../components/common/Button";
 import { maintenanceService } from "../../../services/maintenanceService";
 import { inventoryService } from "../../../services/inventoryService";
-import { serviceRequestService } from "../../../services/serviceRequestService";
 import { userService } from "../../../services/userService";
 import { useAuth } from "../../../context/AuthContext";
+import { useTheme } from "../../../context/ThemeContext";
 
 export default function AdminOverview({
   activeCount = 0,
@@ -35,31 +40,34 @@ export default function AdminOverview({
   onNavigate,
 }) {
   const { user } = useAuth();
+  const { isDark, tokens: t } = useTheme();
+
   const [workOrders, setWorkOrders] = useState([]);
-  const [serviceRequests, setServiceRequests] = useState([]);
   const [lowStockParts, setLowStockParts] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [clock, setClock] = useState(new Date());
 
   const safeAssets = Array.isArray(assets) ? assets : [];
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
 
   useEffect(() => {
+    const timer = setInterval(() => setClock(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     async function loadAdminData() {
       setLoading(true);
       try {
-        const [woRes, srRes, invRes, usersRes] = await Promise.all([
+        const [woRes, invRes, usersRes] = await Promise.all([
           maintenanceService.listWorkOrders().catch(() => ({ success: false })),
-          serviceRequestService.list().catch(() => ({ success: false })),
           inventoryService.listParts().catch(() => ({ success: false })),
           userService.list().catch(() => ({ success: false })),
         ]);
 
         if (woRes?.success && Array.isArray(woRes.data)) {
           setWorkOrders(woRes.data);
-        }
-        if (srRes?.success && Array.isArray(srRes.data)) {
-          setServiceRequests(srRes.data);
         }
         if (invRes?.success && Array.isArray(invRes.data)) {
           const low = invRes.data.filter(
@@ -106,204 +114,510 @@ export default function AdminOverview({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* Header Banner */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+      {/* ── 1. EXECUTIVE HEADER BANNER ── */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 16,
+        }}
+      >
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span style={{ padding: "3px 8px", borderRadius: 6, background: "rgba(6,182,212,0.15)", color: "#06B6D4", fontSize: 11, fontWeight: 800 }}>
-              ADMINISTRATION & OPERATIONS
+          {/* Breadcrumb & Live Radar Indicator */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "3px 10px",
+                borderRadius: 999,
+                background: isDark ? "rgba(14, 165, 233, 0.15)" : "rgba(2, 132, 199, 0.1)",
+                color: isDark ? "#38BDF8" : "#0284C7",
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                border: `1px solid ${isDark ? "rgba(56, 189, 248, 0.25)" : "rgba(2, 132, 199, 0.2)"}`,
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: criticalAlerts > 0 ? "#EF4444" : "#10B981",
+                  boxShadow: `0 0 8px ${criticalAlerts > 0 ? "#EF4444" : "#10B981"}`,
+                }}
+              />
+              {criticalAlerts > 0 ? "ACTION REQUIRED" : "ALL SYSTEMS OPERATIONAL"}
             </span>
-            <span style={{ fontSize: 12, color: "#64748B" }}>Fleet-wide Intelligence Hub</span>
+
+            <span style={{ fontSize: 12, color: t.textMuted, display: "flex", alignItems: "center", gap: 5 }}>
+              <Clock size={12} />
+              {clock.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · {clock.toLocaleTimeString()}
+            </span>
           </div>
-          <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 24, fontWeight: 800, color: "#fff", margin: 0 }}>
+
+          <h1
+            style={{
+              fontFamily: "'Outfit', 'Inter', sans-serif",
+              fontSize: 26,
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+              color: t.textHeading,
+              margin: 0,
+            }}
+          >
             Executive Platform Overview
           </h1>
-          <p style={{ color: "#94A3B8", fontSize: 13.5, margin: "4px 0 0 0" }}>
-            Real-time status of HVAC units, operational work orders, depot inventory, and workforce allocation.
+          <p style={{ color: t.textMuted, fontSize: 13.5, margin: "6px 0 0 0" }}>
+            Central intelligence dashboard monitoring rolling stock HVAC health, maintenance lifecycle, and depot logistics.
           </p>
         </div>
 
+        {/* Quick Executive Actions */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Button variant="outline" size="sm" onClick={() => onNavigate && onNavigate("users")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onNavigate && onNavigate("users")}
+          >
             <Users size={14} style={{ marginRight: 6 }} />
-            Manage Users
+            User Access
           </Button>
-          <Button variant="glow" size="sm" onClick={() => onNavigate && onNavigate("maintenance")}>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onNavigate && onNavigate("inventory")}
+          >
+            <Package size={14} style={{ marginRight: 6 }} />
+            Spare Parts
+          </Button>
+
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => onNavigate && onNavigate("maintenance")}
+          >
             <Wrench size={14} style={{ marginRight: 6 }} />
             Dispatch Work Order
           </Button>
         </div>
       </div>
 
-      {/* Low Stock Warning Banner */}
+      {/* ── 2. ATTENTION NOTIFICATION STRIP (Conditional Alert or Status) ── */}
       {lowStockParts.length > 0 && (
         <div
           style={{
             padding: "14px 20px",
-            borderRadius: 12,
-            background: "rgba(245, 158, 11, 0.1)",
-            border: "1px solid rgba(245, 158, 11, 0.35)",
+            borderRadius: 14,
+            background: isDark ? "rgba(245, 158, 11, 0.12)" : "rgba(245, 158, 11, 0.08)",
+            border: `1px solid ${isDark ? "rgba(245, 158, 11, 0.35)" : "rgba(245, 158, 11, 0.4)"}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             flexWrap: "wrap",
             gap: 12,
+            boxShadow: t.shadowSm,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(245, 158, 11, 0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#F59E0B" }}>
-              <AlertTriangle size={18} />
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                background: isDark ? "rgba(245, 158, 11, 0.2)" : "rgba(245, 158, 11, 0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: isDark ? "#FBBF24" : "#D97706",
+                flexShrink: 0,
+              }}
+            >
+              <AlertTriangle size={20} />
             </div>
             <div>
-              <div style={{ fontSize: 13.5, fontWeight: 700, color: "#F59E0B" }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: isDark ? "#FBBF24" : "#B45309" }}>
                 Depot Inventory Low-Stock Alert
               </div>
-              <div style={{ fontSize: 12.5, color: "#CBD5E1" }}>
-                {lowStockParts.length} critical spare part catalogue item{lowStockParts.length > 1 ? "s are" : " is"} currently at or below minimum reorder threshold.
+              <div style={{ fontSize: 12.5, color: t.text, opacity: 0.85, marginTop: 2 }}>
+                {lowStockParts.length} critical spare parts item{lowStockParts.length > 1 ? "s are" : " is"} currently at or below minimum threshold:{" "}
+                <strong>{lowStockParts.slice(0, 3).map((p) => p.name || p.part_name).join(", ")}</strong>
+                {lowStockParts.length > 3 ? ` and ${lowStockParts.length - 3} more` : ""}.
               </div>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => onNavigate && onNavigate("inventory")} style={{ color: "#F59E0B", borderColor: "rgba(245,158,11,0.4)" }}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onNavigate && onNavigate("inventory")}
+            style={{
+              color: isDark ? "#FBBF24" : "#B45309",
+              borderColor: isDark ? "rgba(245, 158, 11, 0.4)" : "rgba(245, 158, 11, 0.5)",
+            }}
+          >
             Review Stock & Reorder →
           </Button>
         </div>
       )}
 
-      {/* 5 Core Top-Level KPI Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-        {/* 1. Total Fleet Assets */}
-        <Card hoverEffect={true} onClick={() => onNavigate && onNavigate("assets")} style={{ cursor: "pointer" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>TOTAL HVAC UNITS</span>
-            <Boxes size={18} color="#06B6D4" />
+      {/* ── 3. FIVE CORE KPI METRIC CARDS ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 16 }}>
+        {/* Card 1: Total Assets */}
+        <Card
+          hoverEffect={true}
+          accentColor="#0284C7"
+          onClick={() => onNavigate && onNavigate("assets")}
+          style={{ cursor: "pointer" }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, letterSpacing: "0.05em" }}>
+              TOTAL HVAC FLEET
+            </span>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: isDark ? "#38BDF8" : "#0284C7",
+              }}
+            >
+              <Boxes size={16} />
+            </div>
           </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: "#fff" }}>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 30,
+              fontWeight: 800,
+              color: t.textHeading,
+              lineHeight: 1.1,
+            }}
+          >
             {totalAssets || safeAssets.length || 0}
           </div>
-          <div style={{ display: "flex", gap: 8, fontSize: 11.5, marginTop: 6, fontWeight: 600 }}>
-            <span style={{ color: "#10B981" }}>{healthyAssets || safeAssets.length} Healthy</span>
-            <span style={{ color: "#F59E0B" }}>· {warningAssets} Warning</span>
-            <span style={{ color: "#EF4444" }}>· {criticalAssets} Critical</span>
+          <div style={{ display: "flex", gap: 6, fontSize: 11.5, marginTop: 10, fontWeight: 600, flexWrap: "wrap" }}>
+            <span style={{ color: "#10B981" }}>{healthyAssets || safeAssets.length} Nominal</span>
+            <span style={{ color: t.textMuted }}>·</span>
+            <span style={{ color: "#F59E0B" }}>{warningAssets} Warning</span>
+            <span style={{ color: t.textMuted }}>·</span>
+            <span style={{ color: "#EF4444" }}>{criticalAssets} Fault</span>
           </div>
         </Card>
 
-        {/* 2. Fleet Health Index */}
-        <Card hoverEffect={true} onClick={() => onNavigate && onNavigate("telemetry")} style={{ cursor: "pointer" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>FLEET HEALTH INDEX</span>
-            <Activity size={18} color={avgHealth < 75 ? "#F59E0B" : "#10B981"} />
+        {/* Card 2: Fleet Health Index */}
+        <Card
+          hoverEffect={true}
+          accentColor={avgHealth < 75 ? "#F59E0B" : "#10B981"}
+          onClick={() => onNavigate && onNavigate("telemetry")}
+          style={{ cursor: "pointer" }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, letterSpacing: "0.05em" }}>
+              FLEET HEALTH INDEX
+            </span>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: avgHealth < 75 ? "rgba(245, 158, 11, 0.15)" : "rgba(16, 185, 129, 0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: avgHealth < 75 ? "#F59E0B" : "#10B981",
+              }}
+            >
+              <Activity size={16} />
+            </div>
           </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: avgHealth < 75 ? "#F59E0B" : "#10B981" }}>
-            {typeof avgHealth === "number" ? `${Math.round(avgHealth)}%` : "100%"}
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 30,
+              fontWeight: 800,
+              color: avgHealth < 75 ? "#F59E0B" : "#10B981",
+              lineHeight: 1.1,
+            }}
+          >
+            {typeof avgHealth === "number" && !isNaN(avgHealth) ? `${Math.round(avgHealth)}%` : "—"}
           </div>
-          <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 6 }}>
-            Overall Status: <strong style={{ color: "#10B981" }}>Operational</strong>
+          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>Status:</span>
+            <strong style={{ color: avgHealth < 75 ? "#F59E0B" : "#10B981" }}>
+              {typeof avgHealth !== "number" || isNaN(avgHealth) ? "Awaiting Readings" : avgHealth >= 80 ? "Optimal Performance" : "Degradation Monitored"}
+            </strong>
           </div>
         </Card>
 
-        {/* 3. Active Anomaly Alerts */}
-        <Card hoverEffect={true} onClick={() => onNavigate && onNavigate("alerts")} style={{ cursor: "pointer" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>ACTIVE ALERTS</span>
-            <Bell size={18} color={criticalAlerts > 0 ? "#EF4444" : "#10B981"} />
+        {/* Card 3: Active Alerts */}
+        <Card
+          hoverEffect={true}
+          accentColor={criticalAlerts > 0 ? "#EF4444" : "#10B981"}
+          onClick={() => onNavigate && onNavigate("alerts")}
+          style={{ cursor: "pointer" }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, letterSpacing: "0.05em" }}>
+              ACTIVE FAULT ALERTS
+            </span>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: criticalAlerts > 0 ? "rgba(239, 68, 68, 0.15)" : "rgba(16, 185, 129, 0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: criticalAlerts > 0 ? "#EF4444" : "#10B981",
+              }}
+            >
+              <Bell size={16} />
+            </div>
           </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: criticalAlerts > 0 ? "#EF4444" : "#F8FAFC" }}>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 30,
+              fontWeight: 800,
+              color: criticalAlerts > 0 ? "#EF4444" : t.textHeading,
+              lineHeight: 1.1,
+            }}
+          >
             {criticalAlerts}
           </div>
-          <div style={{ fontSize: 12, color: criticalAlerts > 0 ? "#EF4444" : "#10B981", marginTop: 6, fontWeight: 500 }}>
-            {criticalAlerts > 0 ? "Requires technician review" : "All signals nominal"}
+          <div style={{ fontSize: 12, color: criticalAlerts > 0 ? "#EF4444" : "#10B981", marginTop: 10, fontWeight: 600 }}>
+            {criticalAlerts > 0 ? "Requires technician triage" : "Zero active fault alerts"}
           </div>
         </Card>
 
-        {/* 4. Open Work Orders */}
-        <Card hoverEffect={true} onClick={() => onNavigate && onNavigate("maintenance")} style={{ cursor: "pointer" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>ACTIVE WORK ORDERS</span>
-            <Wrench size={18} color="#3B82F6" />
+        {/* Card 4: Work Orders */}
+        <Card
+          hoverEffect={true}
+          accentColor="#3B82F6"
+          onClick={() => onNavigate && onNavigate("maintenance")}
+          style={{ cursor: "pointer" }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, letterSpacing: "0.05em" }}>
+              ACTIVE WORK ORDERS
+            </span>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: isDark ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#3B82F6",
+              }}
+            >
+              <Wrench size={16} />
+            </div>
           </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: "#3B82F6" }}>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 30,
+              fontWeight: 800,
+              color: "#3B82F6",
+              lineHeight: 1.1,
+            }}
+          >
             {openWOs + inProgressWOs + assignedWOs}
           </div>
-          <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 6 }}>
-            {completedWOs} completed · {inProgressWOs} in progress
+          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 10 }}>
+            {completedWOs} closed · {inProgressWOs} in progress
           </div>
         </Card>
 
-        {/* 5. Inventory Low Stock */}
-        <Card hoverEffect={true} onClick={() => onNavigate && onNavigate("inventory")} style={{ cursor: "pointer" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>LOW STOCK PARTS</span>
-            <Package size={18} color={lowStockParts.length > 0 ? "#F59E0B" : "#10B981"} />
+        {/* Card 5: Inventory Stock */}
+        <Card
+          hoverEffect={true}
+          accentColor={lowStockParts.length > 0 ? "#F59E0B" : "#10B981"}
+          onClick={() => onNavigate && onNavigate("inventory")}
+          style={{ cursor: "pointer" }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 700, letterSpacing: "0.05em" }}>
+              LOW-STOCK PARTS
+            </span>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: lowStockParts.length > 0 ? "rgba(245, 158, 11, 0.15)" : "rgba(16, 185, 129, 0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: lowStockParts.length > 0 ? "#F59E0B" : "#10B981",
+              }}
+            >
+              <Package size={16} />
+            </div>
           </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: lowStockParts.length > 0 ? "#F59E0B" : "#10B981" }}>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 30,
+              fontWeight: 800,
+              color: lowStockParts.length > 0 ? "#F59E0B" : "#10B981",
+              lineHeight: 1.1,
+            }}
+          >
             {lowStockParts.length}
           </div>
-          <div style={{ fontSize: 12, color: lowStockParts.length > 0 ? "#F59E0B" : "#10B981", marginTop: 6 }}>
-            {lowStockParts.length > 0 ? "Items need replenishment" : "Inventory optimal"}
+          <div style={{ fontSize: 12, color: lowStockParts.length > 0 ? "#F59E0B" : "#10B981", marginTop: 10, fontWeight: 600 }}>
+            {lowStockParts.length > 0 ? "Threshold breached" : "Inventory healthy"}
           </div>
         </Card>
       </div>
 
-      {/* Main Operations Grid */}
+      {/* ── 4. OPERATIONS PIPELINE & TECHNICIAN ALLOCATION ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 20 }}>
-        {/* Left Column: Work Order Pipeline & Status Breakdown */}
+        {/* Left Column: Work Order Operations Pipeline */}
         <Card hoverEffect={false}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(59, 130, 246, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "#3B82F6" }}>
-                <Wrench size={16} />
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9,
+                  background: isDark ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.12)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#3B82F6",
+                }}
+              >
+                <Wrench size={18} />
               </div>
-              <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff" }}>
-                Work Order Operations Pipeline
+              <div>
+                <div style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontSize: 16, fontWeight: 700, color: t.textHeading }}>
+                  Work Order Operations Pipeline
+                </div>
+                <div style={{ fontSize: 12, color: t.textMuted }}>
+                  Total active & queued maintenance tickets across depots
+                </div>
               </div>
             </div>
             <button
               onClick={() => onNavigate && onNavigate("maintenance")}
-              style={{ background: "transparent", border: "none", color: "#06B6D4", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: t.primary,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
             >
-              View Kanban →
+              View Kanban Board <ChevronRight size={14} />
             </button>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* Status Bars */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Open / Unassigned */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}>
-                <span style={{ color: "#94A3B8" }}>Open / Unassigned</span>
-                <strong style={{ color: "#E2E8F0" }}>{openWOs}</strong>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 7 }}>
+                <span style={{ color: t.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#94A3B8" }} />
+                  Open / Unassigned
+                </span>
+                <strong style={{ color: t.textHeading }}>{openWOs}</strong>
               </div>
-              <div style={{ width: "100%", height: 8, background: "#1E293B", borderRadius: 4, overflow: "hidden" }}>
-                <div style={{ width: `${totalWOs ? (openWOs / totalWOs) * 100 : 0}%`, height: "100%", background: "#94A3B8", borderRadius: 4 }} />
+              <div style={{ width: "100%", height: 8, background: t.cardInner, borderRadius: 999, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${totalWOs ? (openWOs / totalWOs) * 100 : 0}%`,
+                    height: "100%",
+                    background: "#94A3B8",
+                    borderRadius: 999,
+                    transition: "width 0.4s ease",
+                  }}
+                />
               </div>
             </div>
 
+            {/* Assigned to Technician */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}>
-                <span style={{ color: "#94A3B8" }}>Assigned to Technician</span>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 7 }}>
+                <span style={{ color: t.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#3B82F6" }} />
+                  Assigned to Field Technicians
+                </span>
                 <strong style={{ color: "#3B82F6" }}>{assignedWOs}</strong>
               </div>
-              <div style={{ width: "100%", height: 8, background: "#1E293B", borderRadius: 4, overflow: "hidden" }}>
-                <div style={{ width: `${totalWOs ? (assignedWOs / totalWOs) * 100 : 0}%`, height: "100%", background: "#3B82F6", borderRadius: 4 }} />
+              <div style={{ width: "100%", height: 8, background: t.cardInner, borderRadius: 999, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${totalWOs ? (assignedWOs / totalWOs) * 100 : 0}%`,
+                    height: "100%",
+                    background: "#3B82F6",
+                    borderRadius: 999,
+                    transition: "width 0.4s ease",
+                  }}
+                />
               </div>
             </div>
 
+            {/* In Progress */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}>
-                <span style={{ color: "#94A3B8" }}>In Progress (Under Maintenance)</span>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 7 }}>
+                <span style={{ color: t.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#06B6D4" }} />
+                  In Progress (Active Maintenance)
+                </span>
                 <strong style={{ color: "#06B6D4" }}>{inProgressWOs}</strong>
               </div>
-              <div style={{ width: "100%", height: 8, background: "#1E293B", borderRadius: 4, overflow: "hidden" }}>
-                <div style={{ width: `${totalWOs ? (inProgressWOs / totalWOs) * 100 : 0}%`, height: "100%", background: "#06B6D4", borderRadius: 4 }} />
+              <div style={{ width: "100%", height: 8, background: t.cardInner, borderRadius: 999, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${totalWOs ? (inProgressWOs / totalWOs) * 100 : 0}%`,
+                    height: "100%",
+                    background: "#06B6D4",
+                    borderRadius: 999,
+                    transition: "width 0.4s ease",
+                  }}
+                />
               </div>
             </div>
 
+            {/* Completed */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}>
-                <span style={{ color: "#94A3B8" }}>Completed & Closed</span>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 7 }}>
+                <span style={{ color: t.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981" }} />
+                  Completed & Closed
+                </span>
                 <strong style={{ color: "#10B981" }}>{completedWOs}</strong>
               </div>
-              <div style={{ width: "100%", height: 8, background: "#1E293B", borderRadius: 4, overflow: "hidden" }}>
-                <div style={{ width: `${totalWOs ? (completedWOs / totalWOs) * 100 : 0}%`, height: "100%", background: "#10B981", borderRadius: 4 }} />
+              <div style={{ width: "100%", height: 8, background: t.cardInner, borderRadius: 999, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${totalWOs ? (completedWOs / totalWOs) * 100 : 0}%`,
+                    height: "100%",
+                    background: "#10B981",
+                    borderRadius: 999,
+                    transition: "width 0.4s ease",
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -311,168 +625,433 @@ export default function AdminOverview({
 
         {/* Right Column: Technician Workforce & Workload */}
         <Card hoverEffect={false}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(16, 185, 129, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10B981" }}>
-                <Users size={16} />
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9,
+                  background: isDark ? "rgba(16, 185, 129, 0.2)" : "rgba(16, 185, 129, 0.12)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#10B981",
+                }}
+              >
+                <Users size={18} />
               </div>
-              <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff" }}>
-                Field Workforce Workload
+              <div>
+                <div style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontSize: 16, fontWeight: 700, color: t.textHeading }}>
+                  Field Technician Workload
+                </div>
+                <div style={{ fontSize: 12, color: t.textMuted }}>
+                  Technician dispatch status and work order capacity
+                </div>
               </div>
             </div>
             <button
               onClick={() => onNavigate && onNavigate("users")}
-              style={{ background: "transparent", border: "none", color: "#06B6D4", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: t.primary,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
             >
-              All Staff →
+              All Staff <ChevronRight size={14} />
             </button>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {techWorkload.length === 0 && (
-              <div style={{ color: "#64748B", fontSize: 13, textAlign: "center", padding: "20px 0" }}>
-                No field technicians registered yet.
-              </div>
-            )}
-
-            {techWorkload.map((tech) => (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {techWorkload.length === 0 ? (
               <div
-                key={tech.id}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  background: "#060A14",
-                  border: "1px solid #1E293B",
+                  color: t.textMuted,
+                  fontSize: 13,
+                  textAlign: "center",
+                  padding: "30px 0",
+                  background: t.cardInner,
+                  borderRadius: 12,
+                  border: `1px solid ${t.border}`,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 8,
-                      background: "rgba(16,185,129,0.15)",
-                      color: "#10B981",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontWeight: 700,
-                      fontSize: 12,
-                    }}
-                  >
-                    {tech.name?.charAt(0) || "T"}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: "#F8FAFC" }}>{tech.name}</div>
-                    <div style={{ fontSize: 11.5, color: "#64748B" }}>{tech.email}</div>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <span style={{ fontSize: 12, color: tech.activeCount > 0 ? "#F59E0B" : "#10B981" }}>
-                    <strong>{tech.activeCount}</strong> Active
-                  </span>
-                  <span style={{ fontSize: 12, color: "#64748B" }}>
-                    <strong>{tech.completedCount}</strong> Closed
-                  </span>
-                </div>
+                No field technicians registered in this depot.
               </div>
-            ))}
+            ) : (
+              techWorkload.map((tech) => (
+                <div
+                  key={tech.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    background: t.cardInner,
+                    border: `1px solid ${t.border}`,
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        background: isDark ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.12)",
+                        color: "#10B981",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        border: `1px solid ${isDark ? "rgba(16, 185, 129, 0.3)" : "rgba(16, 185, 129, 0.25)"}`,
+                      }}
+                    >
+                      {tech.name?.charAt(0) || "T"}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13.5, color: t.textHeading }}>
+                        {tech.name}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: t.textMuted }}>
+                        {tech.email}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <span
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        padding: "4px 8px",
+                        borderRadius: 6,
+                        background: tech.activeCount > 0 ? (isDark ? "rgba(245, 158, 11, 0.15)" : "rgba(245, 158, 11, 0.1)") : (isDark ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.1)"),
+                        color: tech.activeCount > 0 ? "#F59E0B" : "#10B981",
+                      }}
+                    >
+                      <strong>{tech.activeCount}</strong> Active
+                    </span>
+
+                    <span style={{ fontSize: 12, color: t.textMuted }}>
+                      {tech.completedCount} closed
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </Card>
       </div>
 
-      {/* Quick Administrative Shortcuts */}
+      {/* ── 5. LIVE HVAC FLEET DIGITAL TWIN RADAR (Telemetry Preview) ── */}
       <Card hoverEffect={false}>
-        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 15, fontWeight: 700, color: "#fff", marginBottom: 14 }}>
-          Administrative Quick Actions
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 9,
+                background: isDark ? "rgba(6, 182, 212, 0.2)" : "rgba(6, 182, 212, 0.12)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#06B6D4",
+              }}
+            >
+              <Radio size={18} />
+            </div>
+            <div>
+              <div style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontSize: 16, fontWeight: 700, color: t.textHeading }}>
+                Live Digital Twin Fleet Radar
+              </div>
+              <div style={{ fontSize: 12, color: t.textMuted }}>
+                Active sensor telemetry stream from train HVAC onboard units (3s poll interval)
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => onNavigate && onNavigate("telemetry")}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: t.primary,
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            Live Waveforms & History <ChevronRight size={14} />
+          </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+          {safeAssets.slice(0, 5).map((asset) => {
+            const isAlarm = asset.status === "ALARM" || asset.status === "CRITICAL" || (asset.health || 0) < 50;
+            const isWarning = asset.status === "WARNING" || ((asset.health || 0) >= 50 && (asset.health || 0) < 80);
+
+            const stateColor = isAlarm ? "#EF4444" : isWarning ? "#F59E0B" : "#10B981";
+
+            return (
+              <div
+                key={asset.id}
+                onClick={() => onNavigate && onNavigate("telemetry")}
+                style={{
+                  padding: "14px",
+                  borderRadius: 12,
+                  background: t.cardInner,
+                  border: `1px solid ${t.border}`,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = t.borderHover;
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = t.border;
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 13, color: t.textHeading }}>
+                    {asset.id}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background: `${stateColor}22`,
+                      color: stateColor,
+                    }}
+                  >
+                    {asset.status || "—"}
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted }}>Health Score</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 800, color: stateColor }}>
+                    {asset.health != null ? `${Math.round(asset.health)}%` : "—"}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 11, color: t.textMuted }}>
+                  <div>
+                    Temp: <strong style={{ color: t.text }}>{asset.temperature != null ? `${asset.temperature}°C` : "—"}</strong>
+                  </div>
+                  <div>
+                    Press: <strong style={{ color: t.text }}>{asset.pressure != null ? `${asset.pressure} bar` : "—"}</strong>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* ── 6. EXECUTIVE ADMINISTRATIVE SHORTCUTS ── */}
+      <Card hoverEffect={false}>
+        <div style={{ fontFamily: "'Outfit', 'Inter', sans-serif", fontSize: 16, fontWeight: 700, color: t.textHeading, marginBottom: 14 }}>
+          Administrative Quick Command Center
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+          {/* Action 1 */}
           <button
             onClick={() => onNavigate && onNavigate("assets")}
             style={{
-              padding: "12px 16px",
-              borderRadius: 10,
-              background: "#060A14",
-              border: "1px solid #1E293B",
-              color: "#E2E8F0",
-              fontSize: 13,
-              fontWeight: 600,
+              padding: "16px 18px",
+              borderRadius: 14,
+              background: t.cardInner,
+              border: `1px solid ${t.border}`,
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              justifyContent: "space-between",
               cursor: "pointer",
-              textAlign: "left",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#06B6D4";
+              e.currentTarget.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = t.border;
+              e.currentTarget.style.transform = "translateY(0)";
             }}
           >
-            <Boxes size={16} color="#06B6D4" />
-            <span>Register Asset</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "rgba(6, 182, 212, 0.15)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#06B6D4",
+                }}
+              >
+                <Boxes size={18} />
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: t.textHeading }}>HVAC Asset Registry</div>
+                <div style={{ fontSize: 11.5, color: t.textMuted }}>Manage units & specs</div>
+              </div>
+            </div>
+            <ArrowRight size={15} color={t.textMuted} />
           </button>
 
+          {/* Action 2 */}
           <button
             onClick={() => onNavigate && onNavigate("inventory")}
             style={{
-              padding: "12px 16px",
-              borderRadius: 10,
-              background: "#060A14",
-              border: "1px solid #1E293B",
-              color: "#E2E8F0",
-              fontSize: 13,
-              fontWeight: 600,
+              padding: "16px 18px",
+              borderRadius: 14,
+              background: t.cardInner,
+              border: `1px solid ${t.border}`,
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              justifyContent: "space-between",
               cursor: "pointer",
-              textAlign: "left",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#F59E0B";
+              e.currentTarget.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = t.border;
+              e.currentTarget.style.transform = "translateY(0)";
             }}
           >
-            <Layers size={16} color="#F59E0B" />
-            <span>Manage Stock</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "rgba(245, 158, 11, 0.15)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#F59E0B",
+                }}
+              >
+                <Layers size={18} />
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: t.textHeading }}>Spare Parts & Stock</div>
+                <div style={{ fontSize: 11.5, color: t.textMuted }}>Stock alerts & reorders</div>
+              </div>
+            </div>
+            <ArrowRight size={15} color={t.textMuted} />
           </button>
 
+          {/* Action 3 */}
           <button
             onClick={() => onNavigate && onNavigate("users")}
             style={{
-              padding: "12px 16px",
-              borderRadius: 10,
-              background: "#060A14",
-              border: "1px solid #1E293B",
-              color: "#E2E8F0",
-              fontSize: 13,
-              fontWeight: 600,
+              padding: "16px 18px",
+              borderRadius: 14,
+              background: t.cardInner,
+              border: `1px solid ${t.border}`,
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              justifyContent: "space-between",
               cursor: "pointer",
-              textAlign: "left",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#3B82F6";
+              e.currentTarget.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = t.border;
+              e.currentTarget.style.transform = "translateY(0)";
             }}
           >
-            <Users size={16} color="#3B82F6" />
-            <span>Provision User</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "rgba(59, 130, 246, 0.15)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#3B82F6",
+                }}
+              >
+                <Users size={18} />
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: t.textHeading }}>User Access & Teams</div>
+                <div style={{ fontSize: 11.5, color: t.textMuted }}>Provision platform staff</div>
+              </div>
+            </div>
+            <ArrowRight size={15} color={t.textMuted} />
           </button>
 
+          {/* Action 4 */}
           <button
             onClick={() => onNavigate && onNavigate("settings")}
             style={{
-              padding: "12px 16px",
-              borderRadius: 10,
-              background: "#060A14",
-              border: "1px solid #1E293B",
-              color: "#E2E8F0",
-              fontSize: 13,
-              fontWeight: 600,
+              padding: "16px 18px",
+              borderRadius: 14,
+              background: t.cardInner,
+              border: `1px solid ${t.border}`,
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              justifyContent: "space-between",
               cursor: "pointer",
-              textAlign: "left",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#EC4899";
+              e.currentTarget.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = t.border;
+              e.currentTarget.style.transform = "translateY(0)";
             }}
           >
-            <ShieldCheck size={16} color="#EC4899" />
-            <span>RBAC Matrix</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "rgba(236, 72, 153, 0.15)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#EC4899",
+                }}
+              >
+                <ShieldCheck size={18} />
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: t.textHeading }}>Role Permissions Matrix</div>
+                <div style={{ fontSize: 11.5, color: t.textMuted }}>Granular RBAC access</div>
+              </div>
+            </div>
+            <ArrowRight size={15} color={t.textMuted} />
           </button>
         </div>
       </Card>

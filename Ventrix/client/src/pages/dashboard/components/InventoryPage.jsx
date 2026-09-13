@@ -29,6 +29,9 @@ export default function InventoryPage({ COLORS, Card }) {
 
   const [parts, setParts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [partRequests, setPartRequests] = useState([]);
+  const [activeTab, setActiveTab] = useState("inventory"); // "inventory" | "requests"
+  const [requestStatusFilter, setRequestStatusFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
@@ -59,6 +62,12 @@ export default function InventoryPage({ COLORS, Card }) {
   const [newPartError, setNewPartError] = useState(null);
   const [savingNewPart, setSavingNewPart] = useState(false);
 
+  // Rejection Modal
+  const [rejectModalReq, setRejectModalReq] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [savingReject, setSavingReject] = useState(false);
+  const [approvingId, setApprovingId] = useState(null);
+
   const notify = (type, message) => {
     setToast({ type, message });
     setTimeout(() => setToast(null), 3500);
@@ -68,9 +77,10 @@ export default function InventoryPage({ COLORS, Card }) {
     setLoading(true);
     setError(null);
     try {
-      const [partsRes, catRes] = await Promise.all([
+      const [partsRes, catRes, reqsRes] = await Promise.all([
         inventoryService.listParts(),
         inventoryService.listCategories().catch(() => ({ success: false })),
+        inventoryService.listRequests({ all: true }).catch(() => ({ success: false })),
       ]);
 
       if (partsRes.success) {
@@ -82,12 +92,56 @@ export default function InventoryPage({ COLORS, Card }) {
       if (catRes.success) {
         setCategories(catRes.data || []);
       }
+
+      if (reqsRes.success) {
+        setPartRequests(reqsRes.data || []);
+      }
     } catch {
       setError("Could not reach backend inventory service.");
     } finally {
       setLoading(false);
     }
   }
+
+  const handleApproveRequest = async (req) => {
+    setApprovingId(req.id);
+    try {
+      const res = await inventoryService.approveRequest(req.id);
+      if (res.success) {
+        notify("success", `Approved requisition #${req.id} for ${req.quantity}x ${req.part_name}. Stock deducted.`);
+        await load();
+      } else {
+        notify("error", res.message || "Failed to approve requisition.");
+      }
+    } catch (err) {
+      notify("error", err?.response?.data?.message || "Error approving request.");
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  const handleRejectRequest = async (e) => {
+    e.preventDefault();
+    if (!rejectModalReq) return;
+    setSavingReject(true);
+    try {
+      const res = await inventoryService.rejectRequest(rejectModalReq.id, {
+        rejection_reason: rejectionReason || "Rejected by supervisor",
+      });
+      if (res.success) {
+        notify("success", `Requisition #${rejectModalReq.id} rejected.`);
+        setRejectModalReq(null);
+        setRejectionReason("");
+        await load();
+      } else {
+        notify("error", res.message || "Failed to reject requisition.");
+      }
+    } catch {
+      notify("error", "Error rejecting request.");
+    } finally {
+      setSavingReject(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -288,296 +342,665 @@ export default function InventoryPage({ COLORS, Card }) {
         </div>
       )}
 
-      {/* Header & Controls */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
-            Spare Parts Depot Inventory
-          </h2>
-          <div style={{ fontSize: 12.5, color: "#94A3B8", marginTop: 2 }}>
-            Track on-hand quantities, replenish depot stock, and manage critical maintenance spares
-          </div>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Button variant="outline" size="sm" icon={RotateCw} onClick={load} disabled={loading}>
-            Refresh Stock
-          </Button>
-          {canManage && (
-            <Button
-              variant="glow"
-              size="sm"
-              icon={Plus}
-              onClick={() => {
-                setNewPartError(null);
-                setShowNewPartModal(true);
-              }}
-            >
-              New Spare Part
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Search & Filter Bar */}
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <div
+      {/* Top View Selector Tabs */}
+      <div style={{ display: "flex", gap: 10, borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: 4, marginTop: 4 }}>
+        <button
+          onClick={() => setActiveTab("inventory")}
           style={{
+            padding: "9px 18px",
+            borderRadius: "8px 8px 0 0",
+            border: "none",
+            borderBottom: activeTab === "inventory" ? "2px solid #06B6D4" : "2px solid transparent",
+            background: activeTab === "inventory" ? "rgba(6, 182, 212, 0.12)" : "transparent",
+            color: activeTab === "inventory" ? "#06B6D4" : "#94A3B8",
+            fontWeight: 700,
+            fontSize: 13.5,
+            cursor: "pointer",
             display: "flex",
             alignItems: "center",
             gap: 8,
-            background: "#0F172A",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 8,
-            padding: "6px 12px",
-            flex: "1 1 240px",
-            maxWidth: 360,
           }}
         >
-          <Search size={14} color="#94A3B8" />
-          <input
-            type="text"
-            placeholder="Search part name, code, category..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              background: "transparent",
-              border: "none",
-              outline: "none",
-              color: "#fff",
-              fontSize: 13,
-              width: "100%",
-            }}
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
+          <Package size={16} />
+          Warehouse Stock & Catalog ({parts.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab("requests")}
+          style={{
+            padding: "9px 18px",
+            borderRadius: "8px 8px 0 0",
+            border: "none",
+            borderBottom: activeTab === "requests" ? "2px solid #F59E0B" : "2px solid transparent",
+            background: activeTab === "requests" ? "rgba(245, 158, 11, 0.12)" : "transparent",
+            color: activeTab === "requests" ? "#F59E0B" : "#94A3B8",
+            fontWeight: 700,
+            fontSize: 13.5,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <Layers size={16} />
+          Spare Part Requisitions & Approvals
+          {partRequests.filter((r) => r.status === "PENDING").length > 0 && (
+            <span
               style={{
-                background: "transparent",
-                border: "none",
-                color: "#94A3B8",
-                cursor: "pointer",
-                padding: 0,
+                background: "#F59E0B",
+                color: "#000",
+                padding: "2px 7px",
+                borderRadius: 10,
+                fontSize: 11,
+                fontWeight: 800,
               }}
             >
-              <X size={13} />
-            </button>
+              {partRequests.filter((r) => r.status === "PENDING").length} Pending
+            </span>
           )}
-        </div>
-
-        {categories.length > 0 && (
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            style={{
-              background: "#0F172A",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 8,
-              padding: "7px 12px",
-              color: "#CBD5E1",
-              fontSize: 12.5,
-              outline: "none",
-              cursor: "pointer",
-            }}
-          >
-            <option value="ALL">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        )}
+        </button>
       </div>
 
-      {/* Parts Table */}
-      <Card hoverEffect={false}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr
+      {activeTab === "inventory" ? (
+        <>
+          {/* Header & Controls */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            <div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
+                Spare Parts Depot Inventory
+              </h2>
+              <div style={{ fontSize: 12.5, color: "#94A3B8", marginTop: 2 }}>
+                Track on-hand quantities, replenish depot stock, and manage critical maintenance spares
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Button variant="outline" size="sm" icon={RotateCw} onClick={load} disabled={loading}>
+                Refresh Stock
+              </Button>
+              {canManage && (
+                <Button
+                  variant="glow"
+                  size="sm"
+                  icon={Plus}
+                  onClick={() => {
+                    setNewPartError(null);
+                    setShowNewPartModal(true);
+                  }}
+                >
+                  New Spare Part
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "#0F172A",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 8,
+                padding: "6px 12px",
+                flex: "1 1 240px",
+                maxWidth: 360,
+              }}
+            >
+              <Search size={14} color="#94A3B8" />
+              <input
+                type="text"
+                placeholder="Search part name, code, category..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
                 style={{
-                  textAlign: "left",
-                  color: "#94A3B8",
-                  fontSize: 11.5,
-                  borderBottom: `1px solid ${COLORS.border}`,
+                  background: "transparent",
+                  border: "none",
+                  outline: "none",
+                  color: "#fff",
+                  fontSize: 13,
+                  width: "100%",
+                }}
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#94A3B8",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {categories.length > 0 && (
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                style={{
+                  background: "#0F172A",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 8,
+                  padding: "7px 12px",
+                  color: "#CBD5E1",
+                  fontSize: 12.5,
+                  outline: "none",
+                  cursor: "pointer",
                 }}
               >
-                <th style={{ padding: "10px 8px" }}>Part Name & Code</th>
-                <th style={{ padding: "10px 8px" }}>Category</th>
-                <th style={{ padding: "10px 8px" }}>On Hand</th>
-                <th style={{ padding: "10px 8px" }}>Min Threshold</th>
-                <th style={{ padding: "10px 8px" }}>Unit Price</th>
-                {canManage && (
-                  <th style={{ padding: "10px 8px", textAlign: "right" }}>Quick Adjust</th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredParts.map((p) => {
-                const onHand = Number(p.total_quantity ?? p.total_stock ?? p.quantity ?? 0);
-                const minStock = Number(p.minimum_stock ?? p.min_stock ?? 5);
-                const unit = p.unit || p.unit_of_measure || "pcs";
-                const isLow = onHand <= minStock;
+                <option value="ALL">All Categories</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
-                return (
-                  <tr key={p.id} style={{ borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
-                    <td style={{ padding: "12px 8px" }}>
-                      <div style={{ fontWeight: 600, color: "#F8FAFC" }}>{p.name}</div>
-                      <div
-                        style={{
-                          fontSize: 11.5,
-                          color: "#06B6D4",
-                          fontFamily: "'JetBrains Mono', monospace",
-                          marginTop: 2,
-                        }}
-                      >
-                        {p.part_code}
-                      </div>
-                    </td>
-                    <td style={{ padding: "12px 8px", color: "#94A3B8" }}>
-                      <span
-                        style={{
-                          background: "rgba(255,255,255,0.04)",
-                          padding: "3px 8px",
-                          borderRadius: 6,
-                          fontSize: 11.5,
-                        }}
-                      >
-                        {p.category_name || "General"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "12px 8px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span
-                          style={{
-                            color: isLow ? "#EF4444" : "#10B981",
-                            fontWeight: 700,
-                            fontFamily: "'JetBrains Mono', monospace",
-                            fontSize: 15,
-                          }}
-                        >
-                          {onHand} {unit}
-                        </span>
-                        {isLow && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: "2px 6px",
-                              borderRadius: 4,
-                              background: "rgba(239, 68, 68, 0.15)",
-                              color: "#EF4444",
-                            }}
-                          >
-                            LOW STOCK
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 8px",
-                        fontFamily: "'JetBrains Mono', monospace",
-                        color: "#94A3B8",
-                      }}
-                    >
-                      {minStock} {unit}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 8px",
-                        fontFamily: "'JetBrains Mono', monospace",
-                        color: "#CBD5E1",
-                      }}
-                    >
-                      ₹{Number(p.unit_price || 0).toLocaleString()}
-                    </td>
-                    {canManage && (
-                      <td style={{ padding: "12px 8px", textAlign: "right" }}>
-                        <div style={{ display: "inline-flex", gap: 6 }}>
-                          <button
-                            title="Add Received Stock"
-                            onClick={() => openAdjust(p, "RECEIVED")}
-                            style={{
-                              background: "rgba(16, 185, 129, 0.12)",
-                              border: "1px solid rgba(16, 185, 129, 0.3)",
-                              borderRadius: 6,
-                              padding: "5px 10px",
-                              color: "#10B981",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              cursor: "pointer",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              transition: "all 0.15s ease",
-                            }}
-                          >
-                            <PackagePlus size={13} /> + Add
-                          </button>
-
-                          <button
-                            title="Deduct Used Stock"
-                            onClick={() => openAdjust(p, "USED")}
-                            style={{
-                              background: "rgba(239, 68, 68, 0.12)",
-                              border: "1px solid rgba(239, 68, 68, 0.3)",
-                              borderRadius: 6,
-                              padding: "5px 10px",
-                              color: "#EF4444",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              cursor: "pointer",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              transition: "all 0.15s ease",
-                            }}
-                          >
-                            <PackageMinus size={13} /> - Use
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-              {!loading && filteredParts.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={6}
+          {/* Parts Table */}
+          <Card hoverEffect={false}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr
                     style={{
-                      padding: "36px 8px",
-                      textAlign: "center",
+                      textAlign: "left",
                       color: "#94A3B8",
+                      fontSize: 11.5,
+                      borderBottom: `1px solid ${COLORS.border}`,
                     }}
                   >
-                    {parts.length === 0
-                      ? "No spare parts registered yet. Click \"New Spare Part\" to add your first part."
-                      : "No spare parts match your search."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    <th style={{ padding: "10px 8px" }}>Part Name & Code</th>
+                    <th style={{ padding: "10px 8px" }}>Category</th>
+                    <th style={{ padding: "10px 8px" }}>On Hand</th>
+                    <th style={{ padding: "10px 8px" }}>Min Threshold</th>
+                    <th style={{ padding: "10px 8px" }}>Unit Price</th>
+                    {canManage && (
+                      <th style={{ padding: "10px 8px", textAlign: "right" }}>Quick Adjust</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredParts.map((p) => {
+                    const onHand = Number(p.total_quantity ?? p.total_stock ?? p.quantity ?? 0);
+                    const minStock = Number(p.minimum_stock ?? p.min_stock ?? 5);
+                    const unit = p.unit || p.unit_of_measure || "pcs";
+                    const isLow = onHand <= minStock;
+
+                    return (
+                      <tr key={p.id} style={{ borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
+                        <td style={{ padding: "12px 8px" }}>
+                          <div style={{ fontWeight: 600, color: "#F8FAFC" }}>{p.name}</div>
+                          <div
+                            style={{
+                              fontSize: 11.5,
+                              color: "#06B6D4",
+                              fontFamily: "'JetBrains Mono', monospace",
+                              marginTop: 2,
+                            }}
+                          >
+                            {p.part_code}
+                          </div>
+                        </td>
+                        <td style={{ padding: "12px 8px", color: "#94A3B8" }}>
+                          <span
+                            style={{
+                              background: "rgba(255,255,255,0.04)",
+                              padding: "3px 8px",
+                              borderRadius: 6,
+                              fontSize: 11.5,
+                            }}
+                          >
+                            {p.category_name || "General"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "12px 8px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span
+                              style={{
+                                color: isLow ? "#EF4444" : "#10B981",
+                                fontWeight: 700,
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontSize: 15,
+                              }}
+                            >
+                              {onHand} {unit}
+                            </span>
+                            {isLow && (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: "2px 6px",
+                                  borderRadius: 4,
+                                  background: "rgba(239, 68, 68, 0.15)",
+                                  color: "#EF4444",
+                                }}
+                              >
+                                LOW STOCK
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: "12px 8px",
+                            fontFamily: "'JetBrains Mono', monospace",
+                            color: "#94A3B8",
+                          }}
+                        >
+                          {minStock} {unit}
+                        </td>
+                        <td
+                          style={{
+                            padding: "12px 8px",
+                            fontFamily: "'JetBrains Mono', monospace",
+                            color: "#CBD5E1",
+                          }}
+                        >
+                          ₹{Number(p.unit_price || 0).toLocaleString()}
+                        </td>
+                        {canManage && (
+                          <td style={{ padding: "12px 8px", textAlign: "right" }}>
+                            <div style={{ display: "inline-flex", gap: 6 }}>
+                              <button
+                                title="Add Received Stock"
+                                onClick={() => openAdjust(p, "RECEIVED")}
+                                style={{
+                                  background: "rgba(16, 185, 129, 0.12)",
+                                  border: "1px solid rgba(16, 185, 129, 0.3)",
+                                  borderRadius: 6,
+                                  padding: "5px 10px",
+                                  color: "#10B981",
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  transition: "all 0.15s ease",
+                                }}
+                              >
+                                <PackagePlus size={13} /> + Add
+                              </button>
+
+                              <button
+                                title="Deduct Used Stock"
+                                onClick={() => openAdjust(p, "USED")}
+                                style={{
+                                  background: "rgba(239, 68, 68, 0.12)",
+                                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                                  borderRadius: 6,
+                                  padding: "5px 10px",
+                                  color: "#EF4444",
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  transition: "all 0.15s ease",
+                                }}
+                              >
+                                <PackageMinus size={13} /> - Use
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {!loading && filteredParts.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        style={{
+                          padding: "36px 8px",
+                          textAlign: "center",
+                          color: "#94A3B8",
+                        }}
+                      >
+                        {parts.length === 0
+                          ? "No spare parts registered yet. Click \"New Spare Part\" to add your first part."
+                          : "No spare parts match your search."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      ) : (
+        /* ================= SPARE PART REQUISITIONS & APPROVALS QUEUE ================= */
+        <>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            <div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "#fff" }}>
+                Spare Parts Requisition & Approval Queue
+              </h2>
+              <div style={{ fontSize: 12.5, color: "#94A3B8", marginTop: 2 }}>
+                Review technician part requests. Approving a request atomically deducts stock and issues the component.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Button variant="outline" size="sm" icon={RotateCw} onClick={load} disabled={loading}>
+                Refresh Requests
+              </Button>
+            </div>
+          </div>
+
+          {/* Requisition Status Filter Tabs */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {["ALL", "PENDING", "APPROVED", "REJECTED"].map((st) => {
+              const isSelected = requestStatusFilter === st;
+              const count = st === "ALL" ? partRequests.length : partRequests.filter((r) => r.status === st).length;
+              return (
+                <button
+                  key={st}
+                  onClick={() => setRequestStatusFilter(st)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 20,
+                    border: isSelected ? "1px solid #06B6D4" : "1px solid rgba(255,255,255,0.08)",
+                    background: isSelected ? "rgba(6, 182, 212, 0.15)" : "#0F172A",
+                    color: isSelected ? "#06B6D4" : "#94A3B8",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {st === "ALL" ? "All Requisitions" : st.charAt(0) + st.slice(1).toLowerCase()}
+                  <span style={{ fontSize: 11, opacity: 0.8 }}>({count})</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Requisitions Queue Table */}
+          <Card hoverEffect={false}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr
+                    style={{
+                      textAlign: "left",
+                      color: "#94A3B8",
+                      fontSize: 11.5,
+                      borderBottom: `1px solid ${COLORS.border}`,
+                    }}
+                  >
+                    <th style={{ padding: "10px 8px" }}>Requested Part</th>
+                    <th style={{ padding: "10px 8px" }}>Technician Requester</th>
+                    <th style={{ padding: "10px 8px" }}>Qty Needed</th>
+                    <th style={{ padding: "10px 8px" }}>Available Stock</th>
+                    <th style={{ padding: "10px 8px" }}>Work Order / Job</th>
+                    <th style={{ padding: "10px 8px" }}>Urgency</th>
+                    <th style={{ padding: "10px 8px" }}>Status</th>
+                    <th style={{ padding: "10px 8px", textAlign: "right" }}>Supervisor Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {partRequests
+                    .filter((r) => requestStatusFilter === "ALL" || r.status === requestStatusFilter)
+                    .map((req) => {
+                      const isPending = req.status === "PENDING";
+                      const isApproved = req.status === "APPROVED";
+                      const isRejected = req.status === "REJECTED";
+                      const hasEnoughStock = (req.available_stock || 0) >= req.quantity;
+
+                      return (
+                        <tr key={req.id} style={{ borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
+                          <td style={{ padding: "12px 8px" }}>
+                            <div style={{ fontWeight: 600, color: "#F8FAFC" }}>{req.part_name}</div>
+                            <div style={{ fontSize: 11.5, color: "#06B6D4", fontFamily: "'JetBrains Mono', monospace" }}>
+                              {req.part_code}
+                            </div>
+                            {req.reason && (
+                              <div style={{ fontSize: 11.5, color: "#94A3B8", marginTop: 2 }}>
+                                <em>"{req.reason}"</em>
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 8px" }}>
+                            <div style={{ fontWeight: 600, color: "#fff" }}>{req.requester_name || "Field Tech"}</div>
+                            <div style={{ fontSize: 11, color: "#64748B" }}>{req.requester_email}</div>
+                          </td>
+                          <td style={{ padding: "12px 8px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+                            {req.quantity} {req.unit_of_measure || "pcs"}
+                          </td>
+                          <td style={{ padding: "12px 8px" }}>
+                            <span
+                              style={{
+                                padding: "2px 8px",
+                                borderRadius: 6,
+                                background: hasEnoughStock ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)",
+                                color: hasEnoughStock ? "#10B981" : "#EF4444",
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontWeight: 700,
+                                fontSize: 12,
+                              }}
+                            >
+                              {req.available_stock || 0} {req.unit_of_measure || "pcs"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px 8px", color: "#94A3B8" }}>
+                            {req.work_order_id ? (
+                              <div>
+                                <span style={{ color: "#06B6D4", fontWeight: 600 }}>#{req.work_order_id}</span> · {req.work_order_title || "Job"}
+                                {req.asset_code && <div style={{ fontSize: 11, color: "#64748B" }}>Unit: {req.asset_code}</div>}
+                              </div>
+                            ) : (
+                              "General Depot Maintenance"
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 8px" }}>
+                            <span
+                              style={{
+                                padding: "2px 7px",
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: req.urgency === "CRITICAL" ? "#EF4444" : req.urgency === "HIGH" ? "#F59E0B" : "#10B981",
+                                background: req.urgency === "CRITICAL" ? "rgba(239,68,68,0.15)" : req.urgency === "HIGH" ? "rgba(245,158,11,0.15)" : "rgba(16,185,129,0.15)",
+                              }}
+                            >
+                              {req.urgency}
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px 8px" }}>
+                            <span
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 20,
+                                fontSize: 11.5,
+                                fontWeight: 600,
+                                color: isApproved ? "#10B981" : isRejected ? "#EF4444" : "#F59E0B",
+                                background: isApproved ? "rgba(16,185,129,0.15)" : isRejected ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
+                              }}
+                            >
+                              {isApproved ? "🟢 Approved & Issued" : isRejected ? "🔴 Rejected" : "🟡 Awaiting Approval"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px 8px", textAlign: "right" }}>
+                            {isPending && canManage ? (
+                              <div style={{ display: "inline-flex", gap: 6 }}>
+                                <button
+                                  disabled={approvingId === req.id || !hasEnoughStock}
+                                  onClick={() => handleApproveRequest(req)}
+                                  title={!hasEnoughStock ? "Insufficient warehouse stock to approve" : "Approve and deduct stock"}
+                                  style={{
+                                    background: hasEnoughStock ? "rgba(16, 185, 129, 0.15)" : "rgba(100, 116, 139, 0.15)",
+                                    border: `1px solid ${hasEnoughStock ? "rgba(16, 185, 129, 0.35)" : "rgba(100, 116, 139, 0.3)"}`,
+                                    borderRadius: 6,
+                                    padding: "6px 12px",
+                                    color: hasEnoughStock ? "#10B981" : "#64748B",
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    cursor: hasEnoughStock ? "pointer" : "not-allowed",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                  }}
+                                >
+                                  <CheckCircle2 size={13} />
+                                  {approvingId === req.id ? "Deducting..." : "Approve & Issue"}
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    setRejectModalReq(req);
+                                    setRejectionReason("");
+                                  }}
+                                  style={{
+                                    background: "rgba(239, 68, 68, 0.12)",
+                                    border: "1px solid rgba(239, 68, 68, 0.3)",
+                                    borderRadius: 6,
+                                    padding: "6px 12px",
+                                    color: "#EF4444",
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                  }}
+                                >
+                                  <X size={13} />
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: 11.5, color: "#64748B" }}>
+                                {isApproved ? `Approved by ${req.reviewer_name || "Supervisor"}` : isRejected ? (req.rejection_reason || "Rejected") : "View Only"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {!loading && partRequests.filter((r) => requestStatusFilter === "ALL" || r.status === requestStatusFilter).length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: "36px 8px", textAlign: "center", color: "#94A3B8" }}>
+                        No spare part requisitions found for status "{requestStatusFilter}".
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {/* ================= MODAL: REJECT REQUISITION ================= */}
+      {rejectModalReq && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 110,
+            background: "rgba(0,0,0,0.75)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setRejectModalReq(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              background: "#131C31",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 12,
+              padding: 24,
+              boxShadow: "0 20px 48px rgba(0,0,0,0.5)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>
+                Reject Requisition #{rejectModalReq.id}
+              </div>
+              <button
+                onClick={() => setRejectModalReq(null)}
+                style={{ background: "transparent", border: "none", color: "#94A3B8", cursor: "pointer" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: 13, color: "#94A3B8", margin: "0 0 14px 0" }}>
+              Provide a reason for rejecting the request for <strong>{rejectModalReq.quantity}x {rejectModalReq.part_name}</strong>. Stock will not be deducted.
+            </p>
+
+            <form onSubmit={handleRejectRequest} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <textarea
+                required
+                rows={3}
+                placeholder="e.g. Existing serviceable component located in Bay 1 storage..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                style={{
+                  background: "#080E1E",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  color: "#fff",
+                  fontSize: 13,
+                }}
+              />
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <Button type="button" variant="outline" size="sm" onClick={() => setRejectModalReq(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="danger" size="sm" disabled={savingReject}>
+                  {savingReject ? "Rejecting..." : "Confirm Rejection"}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
-      </Card>
+      )}
 
       {/* Adjust Stock Modal */}
       {adjustPart && (

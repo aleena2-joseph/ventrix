@@ -7,16 +7,13 @@ const pool = require("../config/db");
 const DEFAULT_ROLE_PERMISSIONS = {
   ADMIN: ["*"],
   VENTRIX_ADMIN: ["*"],
-  SUPER_ADMIN: ["*"],
   ENGINEER: [
     "dashboard.view", "assets.view", "fleet.view", "telemetry.view", "predictions.view", "alerts.view",
-    "maintenance.view", "maintenance.manage", "service_requests.view",
-    "service_requests.create", "service_requests.manage", "inventory.view", "inventory.manage", "products.manage", "reports.view"
+    "maintenance.view", "maintenance.manage", "inventory.view", "inventory.manage", "products.manage", "reports.view"
   ],
   TECHNICIAN: [
     "dashboard.view", "assets.view", "telemetry.view", "predictions.view", "alerts.view",
-    "maintenance.view", "maintenance.manage", "service_requests.view",
-    "service_requests.create", "service_requests.manage", "inventory.view", "reports.view"
+    "maintenance.view", "maintenance.manage", "inventory.view", "reports.view"
   ],
 };
 
@@ -46,7 +43,7 @@ const requirePermission = (permission) => async (req, res, next) => {
   const roleName = req.user.role_name || req.user.role;
 
   // Admin always has full access
-  if (roleName === "ADMIN" || roleName === "SUPER_ADMIN" || roleName === "VENTRIX_ADMIN") return next();
+  if (roleName === "ADMIN" || roleName === "VENTRIX_ADMIN") return next();
 
   try {
     const result = await pool.query(

@@ -26,8 +26,10 @@ const STATUS_COLOR = {
 };
 
 export default function MaintenancePage({ COLORS, Card, role }) {
-  const { can, isVentrixRole } = useAuth();
+  const { user, can, isVentrixRole } = useAuth();
   const canManage = can("maintenance.manage");
+  const isTechnician = user?.role === "TECHNICIAN" || user?.role_name === "TECHNICIAN" || role === "TECHNICIAN";
+  const canApprove = user?.role === "ADMIN" || user?.role === "VENTRIX_ADMIN" || user?.role === "ENGINEER" || can("inventory.manage");
 
   const [workOrders, setWorkOrders] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -49,12 +51,17 @@ export default function MaintenancePage({ COLORS, Card, role }) {
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // Use Part Modal
+  // Use / Request Part Modal
   const [partModalWO, setPartModalWO] = useState(null);
   const [selectedPartId, setSelectedPartId] = useState("");
   const [partQty, setPartQty] = useState(1);
+  const [partUrgency, setPartUrgency] = useState("MEDIUM");
+  const [partReason, setPartReason] = useState("");
   const [woParts, setWoParts] = useState([]);
+  const [woRequests, setWoRequests] = useState([]);
+  const [partRequests, setPartRequests] = useState([]);
   const [issuingPart, setIssuingPart] = useState(false);
+  const [approvingReqId, setApprovingReqId] = useState(null);
 
   const notify = (type, message) => {
     setToast({ type, message });
@@ -65,11 +72,12 @@ export default function MaintenancePage({ COLORS, Card, role }) {
     setLoading(true);
     setError(null);
     try {
-      const [woRes, aRes, invRes, uRes] = await Promise.all([
+      const [woRes, aRes, invRes, uRes, reqsRes] = await Promise.all([
         maintenanceService.listWorkOrders(),
         getAssets(),
         inventoryService.list().catch(() => ({ success: false })),
         userService.getTechnicians().catch(() => ({ success: false })),
+        inventoryService.listRequests({ all: true }).catch(() => ({ success: false })),
       ]);
 
       if (woRes.success) setWorkOrders(woRes.data || []);
@@ -79,6 +87,9 @@ export default function MaintenancePage({ COLORS, Card, role }) {
       if (invRes.success) setInventoryParts(invRes.data || []);
       if (uRes.success && Array.isArray(uRes.data)) {
         setTechnicians(uRes.data);
+      }
+      if (reqsRes.success && Array.isArray(reqsRes.data)) {
+        setPartRequests(reqsRes.data);
       }
     } catch {
       setError("Could not reach backend services.");
@@ -124,6 +135,20 @@ export default function MaintenancePage({ COLORS, Card, role }) {
   }
 
   async function changeStatus(id, status) {
+    if (status === "COMPLETED" || status === "CLOSED") {
+      // Prevent completion if any requested spare part is still awaiting approval
+      const pendingReqs = partRequests.filter(
+        (r) => Number(r.work_order_id) === Number(id) && r.status === "PENDING"
+      );
+      if (pendingReqs.length > 0) {
+        notify(
+          "error",
+          `Cannot complete work order #${id}: ${pendingReqs.length} spare part request(s) are awaiting Admin/Engineer approval.`
+        );
+        return;
+      }
+    }
+
     try {
       const res = await maintenanceService.updateWorkOrderStatus(id, status);
       if (res.success) {
@@ -141,15 +166,26 @@ export default function MaintenancePage({ COLORS, Card, role }) {
     setPartModalWO(wo);
     setSelectedPartId(inventoryParts[0]?.id ? String(inventoryParts[0].id) : "");
     setPartQty(1);
+    setPartUrgency("MEDIUM");
+    setPartReason("");
     try {
-      const res = await maintenanceService.getWorkOrderParts(wo.id);
-      if (res.success) setWoParts(res.data || []);
+      const [partsRes, reqsRes] = await Promise.all([
+        maintenanceService.getWorkOrderParts(wo.id).catch(() => ({ success: false })),
+        inventoryService.listRequests({ work_order_id: wo.id, all: true }).catch(() => ({ success: false })),
+      ]);
+      if (partsRes.success) setWoParts(partsRes.data || []);
+      else setWoParts([]);
+
+      if (reqsRes.success) setWoRequests(reqsRes.data || []);
+      else setWoRequests([]);
     } catch {
       setWoParts([]);
+      setWoRequests([]);
     }
   }
 
-  async function handleUsePartSubmit(e) {
+  // Technician Submits Spare Part Request (Pending Admin Approval)
+  async function handleRequestPartSubmit(e) {
     e.preventDefault();
     if (!selectedPartId || partQty <= 0) {
       notify("error", "Valid part and quantity required");
@@ -157,25 +193,69 @@ export default function MaintenancePage({ COLORS, Card, role }) {
     }
     setIssuingPart(true);
     try {
-      const res = await maintenanceService.usePart(partModalWO.id, {
+      const res = await inventoryService.createRequest({
         part_id: Number(selectedPartId),
         quantity: Number(partQty),
+        work_order_id: partModalWO.id,
+        urgency: partUrgency,
+        reason: partReason || `Spare part for job #${partModalWO.id}`,
       });
 
       if (res.success) {
-        notify("success", "Part deducted from inventory and logged on work order.");
-        const partsRes = await maintenanceService.getWorkOrderParts(partModalWO.id);
-        if (partsRes.success) setWoParts(partsRes.data || []);
-        // Refresh inventory counts
-        const invRes = await inventoryService.list();
-        if (invRes.success) setInventoryParts(invRes.data || []);
+        notify("success", "Spare part requested. Awaiting Admin/Engineer approval before stock is issued.");
+        const reqsRes = await inventoryService.listRequests({ work_order_id: partModalWO.id, all: true });
+        if (reqsRes.success) setWoRequests(reqsRes.data || []);
+        loadData();
       } else {
-        notify("error", res.message || "Failed to issue part.");
+        notify("error", res.message || "Failed to request part.");
       }
     } catch {
-      notify("error", "Failed to issue part.");
+      notify("error", "Failed to request part.");
     } finally {
       setIssuingPart(false);
+    }
+  }
+
+  // Admin/Engineer Approves Request & Deducts Stock
+  async function handleApprovePartRequest(req) {
+    setApprovingReqId(req.id);
+    try {
+      const res = await inventoryService.approveRequest(req.id);
+      if (res.success) {
+        notify("success", `Approved ${req.quantity}x ${req.part_name}. Stock deducted and issued to work order.`);
+        const [partsRes, reqsRes] = await Promise.all([
+          maintenanceService.getWorkOrderParts(partModalWO.id),
+          inventoryService.listRequests({ work_order_id: partModalWO.id, all: true }),
+        ]);
+        if (partsRes.success) setWoParts(partsRes.data || []);
+        if (reqsRes.success) setWoRequests(reqsRes.data || []);
+        loadData();
+      } else {
+        notify("error", res.message || "Failed to approve request.");
+      }
+    } catch {
+      notify("error", "Error approving request.");
+    } finally {
+      setApprovingReqId(null);
+    }
+  }
+
+  // Admin/Engineer Rejects Request
+  async function handleRejectPartRequest(req) {
+    try {
+      const res = await inventoryService.rejectRequest(req.id, {
+        rejection_reason: "Rejected by supervisor",
+      });
+      if (res.success) {
+        notify("success", `Request for ${req.quantity}x ${req.part_name} rejected.`);
+        const reqsRes = await inventoryService.listRequests({ work_order_id: partModalWO.id, all: true });
+        if (reqsRes.success) setWoRequests(reqsRes.data || []);
+        loadData();
+      } else {
+        notify("error", res.message || "Failed to reject request.");
+      }
+    } catch {
+      notify("error", "Error rejecting request.");
     }
   }
 
@@ -494,7 +574,7 @@ export default function MaintenancePage({ COLORS, Card, role }) {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", gap: 8, color: "#fff" }}>
                 <Package size={18} color="#06B6D4" />
                 Spare Parts — Work Order #{partModalWO.id}
               </div>
@@ -503,47 +583,135 @@ export default function MaintenancePage({ COLORS, Card, role }) {
               </button>
             </div>
 
-            {/* Issued Parts List */}
+            {/* Requisitions & Issued Parts List */}
             <div style={{ marginBottom: 18 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#94A3B8", marginBottom: 8 }}>Parts Issued to this Job:</div>
-              <div style={{ background: "#0B1120", borderRadius: 8, padding: 10, border: "1px solid rgba(255,255,255,0.06)", maxHeight: 130, overflowY: "auto" }}>
-                {woParts.map((wp) => (
-                  <div key={wp.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <span>{wp.part_name || wp.name || wp.part_code || `Part #${wp.part_id}`}</span>
-                    <strong style={{ color: "#10B981" }}>× {wp.quantity} {wp.unit_of_measure || wp.unit || "pcs"}</strong>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#94A3B8", marginBottom: 8 }}>
+                Spare Part Requisitions for this Work Order:
+              </div>
+              <div style={{ background: "#0B1120", borderRadius: 8, padding: 10, border: "1px solid rgba(255,255,255,0.06)", maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+                {woRequests.map((req) => {
+                  const isPending = req.status === "PENDING";
+                  const isApproved = req.status === "APPROVED";
+                  const isRejected = req.status === "REJECTED";
+
+                  return (
+                    <div
+                      key={req.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        fontSize: 12.5,
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        background: "rgba(255,255,255,0.02)",
+                        border: "1px solid rgba(255,255,255,0.05)",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, color: "#fff" }}>
+                          {req.quantity}x {req.part_name || req.name} ({req.part_code || "SKU"})
+                        </div>
+                        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
+                          {req.reason ? `"${req.reason}"` : "Requisitioned for job"} · <span style={{ color: "#06B6D4" }}>{req.urgency}</span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span
+                          style={{
+                            padding: "3px 8px",
+                            borderRadius: 12,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: isApproved ? "#10B981" : isRejected ? "#EF4444" : "#F59E0B",
+                            background: isApproved ? "rgba(16,185,129,0.15)" : isRejected ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
+                          }}
+                        >
+                          {isApproved ? "🟢 Approved & Issued" : isRejected ? "🔴 Rejected" : "🟡 Pending Admin Approval"}
+                        </span>
+
+                        {isPending && canApprove && (
+                          <div style={{ display: "inline-flex", gap: 6 }}>
+                            <button
+                              disabled={approvingReqId === req.id}
+                              onClick={() => handleApprovePartRequest(req)}
+                              style={{
+                                background: "#10B981",
+                                border: "none",
+                                borderRadius: 4,
+                                padding: "4px 10px",
+                                color: "#000",
+                                fontWeight: 700,
+                                fontSize: 11.5,
+                                cursor: "pointer",
+                              }}
+                            >
+                              {approvingReqId === req.id ? "Deducting..." : "Approve & Issue"}
+                            </button>
+
+                            <button
+                              onClick={() => handleRejectPartRequest(req)}
+                              style={{
+                                background: "rgba(239, 68, 68, 0.15)",
+                                border: "1px solid rgba(239, 68, 68, 0.3)",
+                                borderRadius: 4,
+                                padding: "4px 8px",
+                                color: "#EF4444",
+                                fontWeight: 700,
+                                fontSize: 11.5,
+                                cursor: "pointer",
+                              }}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {woRequests.length === 0 && woParts.length === 0 && (
+                  <div style={{ color: "#94A3B8", fontSize: 12, textAlign: "center", padding: "12px 0" }}>
+                    No spare parts requested or issued yet for this work order.
                   </div>
-                ))}
-                {woParts.length === 0 && (
-                  <div style={{ color: "#94A3B8", fontSize: 12, textAlign: "center", padding: "8px 0" }}>No parts issued yet.</div>
                 )}
               </div>
             </div>
 
-            {/* Issue Part Form */}
-            {canManage && (
-              <form onSubmit={handleUsePartSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 14 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#06B6D4" }}>Issue Part from Depot Inventory:</div>
+            {/* Request Spare Part Form (Only for Field Technicians) */}
+            {isTechnician ? (
+              <form onSubmit={handleRequestPartSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: "#06B6D4" }}>
+                    Request Spare Part Requisition:
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                    Requires Admin/Engineer approval before stock is deducted & issued.
+                  </div>
+                </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
                   <div>
-                    <label style={{ fontSize: 11.5, color: "#94A3B8", display: "block", marginBottom: 3 }}>Select Spare Part</label>
+                    <label style={{ fontSize: 11.5, color: "#94A3B8", display: "block", marginBottom: 3 }}>Select Spare Part *</label>
                     <select
                       value={selectedPartId}
                       onChange={(e) => setSelectedPartId(e.target.value)}
                       style={{ width: "100%", background: "#0B1120", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 10px", color: "inherit", fontSize: 12.5 }}
                       required
                     >
-                      <option value="">Select Part</option>
+                      <option value="">Select Part from Warehouse...</option>
                       {inventoryParts.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.name || item.part_name} ({item.part_code}) — Avail: {item.total_quantity ?? item.quantity ?? 0} {item.unit || "pcs"}
+                          {item.name || item.part_name} ({item.part_code}) — Depot Stock: {item.total_quantity ?? item.quantity ?? 0} {item.unit || "pcs"}
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label style={{ fontSize: 11.5, color: "#94A3B8", display: "block", marginBottom: 3 }}>Quantity</label>
+                    <label style={{ fontSize: 11.5, color: "#94A3B8", display: "block", marginBottom: 3 }}>Quantity *</label>
                     <input
                       type="number"
                       min={1}
@@ -555,12 +723,39 @@ export default function MaintenancePage({ COLORS, Card, role }) {
                   </div>
                 </div>
 
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11.5, color: "#94A3B8", display: "block", marginBottom: 3 }}>Urgency Level</label>
+                    <select
+                      value={partUrgency}
+                      onChange={(e) => setPartUrgency(e.target.value)}
+                      style={{ width: "100%", background: "#0B1120", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 10px", color: "inherit", fontSize: 12.5 }}
+                    >
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                      <option value="CRITICAL">Critical</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 11.5, color: "#94A3B8", display: "block", marginBottom: 3 }}>Reason / Justification</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Worn contactor detected during inspection"
+                      value={partReason}
+                      onChange={(e) => setPartReason(e.target.value)}
+                      style={{ width: "100%", background: "#0B1120", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 10px", color: "inherit", fontSize: 12.5 }}
+                    />
+                  </div>
+                </div>
+
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
                   <button
                     type="submit"
                     disabled={issuingPart}
                     style={{
-                      background: "#10B981",
+                      background: "#06B6D4",
                       border: "none",
                       borderRadius: 6,
                       padding: "7px 16px",
@@ -570,10 +765,25 @@ export default function MaintenancePage({ COLORS, Card, role }) {
                       cursor: "pointer",
                     }}
                   >
-                    {issuingPart ? "Deducting..." : "Issue Part (Deduct Stock)"}
+                    {issuingPart ? "Submitting..." : "Submit Spare Part Request"}
                   </button>
                 </div>
               </form>
+            ) : (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 8,
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  fontSize: 12,
+                  color: "#94A3B8",
+                  textAlign: "center",
+                  marginTop: 14,
+                }}
+              >
+                ℹ️ Field technicians submit requisitions for this work order. As a Supervisor (Admin / Engineer), review and approve pending requests above to deduct stock and issue parts.
+              </div>
             )}
           </div>
         </div>

@@ -14,7 +14,6 @@ import AssetManagement from "./components/AssetManagement";
 import TelemetryPage from "./components/TelemetryPage";
 import AlertsPage from "./components/AlertsPage";
 import MaintenancePage from "./components/MaintenancePage";
-import ServiceRequestsPage from "./components/ServiceRequestsPage";
 import InventoryPage from "./components/InventoryPage";
 import UsersPage from "./components/UsersPage";
 import RolePermissionsPage from "./components/RolePermissionsPage";
@@ -43,7 +42,6 @@ function getNavGroups(role) {
         items: [
           { key: "dashboard", label: "My Field Dashboard", icon: LayoutGrid, permission: "dashboard.view" },
           { key: "maintenance", label: "My Work Orders", icon: Wrench, permission: "maintenance.view" },
-          { key: "service-requests", label: "Service Tickets", icon: Bell, permission: "service_requests.view" },
           { key: "inventory", label: "Spare Parts Catalog", icon: Layers, permission: "inventory.view" },
         ],
       },
@@ -65,7 +63,6 @@ function getNavGroups(role) {
         items: [
           { key: "assets", label: "HVAC Asset Registry", icon: Boxes, permission: "assets.view" },
           { key: "maintenance", label: "Maintenance & Work Orders", icon: Wrench, permission: "maintenance.view" },
-          { key: "service-requests", label: "Service Requests", icon: Bell, permission: "service_requests.view" },
           { key: "inventory", label: "Spare Parts & Stock", icon: Layers, permission: "inventory.view" },
         ],
       },
@@ -91,7 +88,6 @@ function getNavGroups(role) {
     {
       title: "Depot Operations",
       items: [
-        { key: "service-requests", label: "Service Requests", icon: Bell, permission: "service_requests.view" },
         { key: "maintenance", label: "Maintenance & Work Orders", icon: Wrench, permission: "maintenance.view" },
         { key: "inventory", label: "Spare Parts & Stock", icon: Layers, permission: "inventory.view" },
       ],
@@ -477,7 +473,6 @@ export default function VentrixDashboard() {
           {active === "assets"          && <AssetManagement COLORS={COLORS_LEGACY} Card={Card} />}
           {active === "telemetry"       && <TelemetryPage telemetry={telemetry} telemetryRows={telemetryRows} />}
           {active === "alerts"          && <AlertsPage onNavigate={setActive} />}
-          {active === "service-requests"&& <ServiceRequestsPage COLORS={COLORS_LEGACY} Card={Card} />}
           {active === "maintenance"     && <MaintenancePage COLORS={COLORS_LEGACY} Card={Card} role={role} />}
           {active === "inventory"       && <InventoryPage COLORS={COLORS_LEGACY} Card={Card} />}
           {active === "users"           && <UsersPage />}

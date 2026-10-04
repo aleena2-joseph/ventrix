@@ -14,3 +14,7 @@ export const updateAsset = (assetCode, fields) => api.put(`/assets/${assetCode}`
 
 export const updateAssetStatus = (assetCode, status) =>
   api.patch(`/assets/${assetCode}/status`, { status });
+
+export const decommissionAsset = (assetCode) =>
+  api.patch(`/assets/${assetCode}/status`, { status: "DECOMMISSIONED" });
+

@@ -19,5 +19,7 @@ export const inventoryService = {
   listRequests: (params = {}) => api.get("/inventory/requests", { params }),
   createRequest: (data) => api.post("/inventory/requests", data),
   approveRequest: (id, data = {}) => api.patch(`/inventory/requests/${id}/approve`, data),
+  issueRequest: (id, data = {}) => api.patch(`/inventory/requests/${id}/issue`, data),
+  markPartUsed: (id, data = {}) => api.patch(`/inventory/requests/${id}/used`, data),
   rejectRequest: (id, data = {}) => api.patch(`/inventory/requests/${id}/reject`, data),
 };

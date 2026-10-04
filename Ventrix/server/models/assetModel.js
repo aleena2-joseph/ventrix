@@ -48,7 +48,38 @@ const WRITABLE_FIELDS = [
   "metadata", // "Configuration" in the UI
 ];
 
-const createAsset = async (fields) => {
+const sanitizeAssetFields = (fields) => {
+  const sanitized = { ...fields };
+
+  // Integer columns: convert empty string / NaN to null
+  ["product_id", "coach_id"].forEach((col) => {
+    if (sanitized[col] === "" || sanitized[col] === undefined || sanitized[col] === null) {
+      sanitized[col] = null;
+    } else {
+      const parsed = parseInt(sanitized[col], 10);
+      sanitized[col] = isNaN(parsed) ? null : parsed;
+    }
+  });
+
+  // Date columns: convert empty string to null
+  ["install_date", "warranty_start", "warranty_end"].forEach((col) => {
+    if (sanitized[col] === "" || sanitized[col] === undefined) {
+      sanitized[col] = null;
+    }
+  });
+
+  // String columns: convert empty string to null
+  ["zone", "serial_number"].forEach((col) => {
+    if (sanitized[col] === "") {
+      sanitized[col] = null;
+    }
+  });
+
+  return sanitized;
+};
+
+const createAsset = async (rawFields) => {
+  const fields = sanitizeAssetFields(rawFields);
   const columns = WRITABLE_FIELDS.filter((col) => fields[col] !== undefined);
   const values = columns.map((col) => fields[col]);
   const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
@@ -60,7 +91,8 @@ const createAsset = async (fields) => {
   return findAssetByCode(result.rows[0].asset_code);
 };
 
-const updateAsset = async (assetCode, fields) => {
+const updateAsset = async (assetCode, rawFields) => {
+  const fields = sanitizeAssetFields(rawFields);
   const columns = WRITABLE_FIELDS.filter((col) => fields[col] !== undefined && col !== "asset_code");
   if (columns.length === 0) return findAssetByCode(assetCode);
 

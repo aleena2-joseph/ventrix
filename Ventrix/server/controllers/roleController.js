@@ -33,6 +33,9 @@ async function ensurePermissionsSchema() {
         ('alerts.manage', 'Manage alerts', 'Monitoring', 'Create and resolve alerts'),
         ('maintenance.view', 'View maintenance', 'Operations', 'View schedules and work orders'),
         ('maintenance.manage', 'Manage maintenance', 'Operations', 'Create and update maintenance work'),
+        ('maintenance.verify', 'Verify & close maintenance', 'Operations', 'Inspect and sign off completed work orders'),
+        ('parts.request', 'Request spare parts', 'Operations', 'Submit spare part requisitions for work orders'),
+        ('parts.issue', 'Issue warehouse stock', 'Operations', 'Physically issue approved spare parts from warehouse'),
         ('inventory.manage', 'Manage inventory', 'Operations', 'Manage parts and stock'),
         ('procurement.manage', 'Manage procurement', 'Operations', 'Manage suppliers and purchase orders'),
         ('products.manage', 'Manage products', 'Administration', 'Manage product catalogue'),
@@ -49,17 +52,18 @@ async function ensurePermissionsSchema() {
         (r.name IN ('ADMIN', 'VENTRIX_ADMIN') AND p.permission_key IN (
           'dashboard.view','assets.view','assets.manage','fleet.view','fleet.manage',
           'telemetry.view','predictions.view','alerts.view','alerts.manage',
-          'maintenance.view','maintenance.manage',
+          'maintenance.view','maintenance.manage','maintenance.verify','parts.issue',
           'inventory.manage','procurement.manage','products.manage','customers.manage','users.manage','reports.view','settings.manage'
         ))
         OR (r.name = 'ENGINEER' AND p.permission_key IN (
           'dashboard.view','assets.view','fleet.view','telemetry.view','predictions.view','alerts.view',
-          'maintenance.view','maintenance.manage',
+          'maintenance.view','maintenance.manage','maintenance.verify','parts.request',
           'inventory.manage','products.manage','reports.view'
         ))
         OR (r.name = 'TECHNICIAN' AND p.permission_key IN (
           'dashboard.view','assets.view','telemetry.view','predictions.view','alerts.view',
-          'maintenance.view','maintenance.manage','inventory.manage','products.manage','reports.view'
+          'maintenance.view','maintenance.manage','parts.request',
+          'inventory.manage','products.manage','reports.view'
         ))
       )
       ON CONFLICT DO NOTHING;

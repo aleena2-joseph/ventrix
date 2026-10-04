@@ -13,6 +13,7 @@ const maintenanceRoutes = require("./routes/maintenanceRoutes");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const serviceRequestRoutes = require("./routes/serviceRequestRoutes");
 const alertRoutes = require("./routes/alertRoutes");
+const fleetRoutes = require("./routes/fleetRoutes");
 
 const app = express();
 const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175")
@@ -72,8 +73,8 @@ app.use("/api/maintenance", maintenanceRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/service-requests", serviceRequestRoutes);
 app.use("/api/alerts", alertRoutes);
+app.use("/api/fleet", fleetRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server Running on Port ${PORT}`);
 });
-

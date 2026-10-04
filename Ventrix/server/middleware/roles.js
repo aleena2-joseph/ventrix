@@ -9,11 +9,12 @@ const DEFAULT_ROLE_PERMISSIONS = {
   VENTRIX_ADMIN: ["*"],
   ENGINEER: [
     "dashboard.view", "assets.view", "fleet.view", "telemetry.view", "predictions.view", "alerts.view",
-    "maintenance.view", "maintenance.manage", "inventory.view", "inventory.manage", "products.manage", "reports.view"
+    "maintenance.view", "maintenance.manage", "maintenance.verify", "inventory.view", "inventory.manage",
+    "parts.request", "parts.issue", "reports.view"
   ],
   TECHNICIAN: [
     "dashboard.view", "assets.view", "telemetry.view", "predictions.view", "alerts.view",
-    "maintenance.view", "maintenance.manage", "inventory.view", "reports.view"
+    "maintenance.view", "maintenance.manage", "inventory.view", "parts.request", "reports.view"
   ],
 };
 

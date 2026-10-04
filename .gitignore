@@ -5,4 +5,5 @@
 __pycache__/
 *.py[cod]
 RUNBOOK.md
-Railway-Simulation/hvac_fix/rul_model.pkl 
+Railway-Simulation/hvac_fix/rul_model.pkl
+*.zip

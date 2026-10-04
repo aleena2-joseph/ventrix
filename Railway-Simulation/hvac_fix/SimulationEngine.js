@@ -8,9 +8,11 @@
             
             this.environment = new EnvironmentModel();
             this.assetManager = new AssetManager();
-            this.assetManager.registerAsset(
-                new HVACAsset("HVAC-001")
-            );  
+            this.assetManager.registerAsset(new HVACAsset("HVAC-001"));
+            this.assetManager.registerAsset(new HVACAsset("HVAC-002"));
+            this.assetManager.registerAsset(new HVACAsset("HVAC-003"));
+            this.assetManager.registerAsset(new HVACAsset("HVAC-004"));
+            this.assetManager.registerAsset(new HVACAsset("HVAC-005"));
             this.monteCarlo = new MonteCarloEngine();
             this.publisher = new TelemetryPublisher();
             this.updateInterval = updateInterval;

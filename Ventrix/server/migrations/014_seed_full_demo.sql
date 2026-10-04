@@ -16,9 +16,7 @@ SELECT v.name, v.email, '$2b$10$A5d7oQD2mQ.kP1EqVLe4gOsYqRGwGtRopxRs5R7rr4fKWj3G
 FROM (VALUES
     ('Ventrix Admin',       'admin@ventrix.com',      'VTX', 'VENTRIX_ADMIN'),
     ('Ventrix Engineer',    'engineer@ventrix.com',   'VTX', 'ENGINEER'),
-    ('Ventrix Technician',  'tech@ventrix.com',       'VTX', 'TECHNICIAN'),
-    ('Railways Fleet Admin','admin@railways.gov.in',  'IR',  'CUSTOMER_ADMIN'),
-    ('Railways Operator',   'operator@railways.gov.in','IR', 'CUSTOMER_USER')
+    ('Ventrix Technician',  'tech@ventrix.com',       'VTX', 'TECHNICIAN')
 ) AS v(name, email, org_code, role_name)
 JOIN organizations o ON o.code = v.org_code
 JOIN roles r ON r.name = v.role_name
@@ -97,6 +95,6 @@ SELECT o.id, a.id, u.id, 'High vibration on HVAC-005', 'Operator reported unusua
        'HIGH', 'ASSIGNED'
 FROM assets a
 JOIN organizations o ON o.code = 'IR'
-JOIN users u ON u.email = 'operator@railways.gov.in'
+JOIN users u ON u.email = 'admin@ventrix.com'
 WHERE a.asset_code = 'HVAC-005'
   AND NOT EXISTS (SELECT 1 FROM service_requests sr WHERE sr.asset_id = a.id AND sr.title = 'High vibration on HVAC-005');

@@ -198,12 +198,12 @@ export default function AdminOverview({
           </Button>
 
           <Button
-            variant="primary"
+            variant="outline"
             size="sm"
             onClick={() => onNavigate && onNavigate("maintenance")}
           >
             <Wrench size={14} style={{ marginRight: 6 }} />
-            Dispatch Work Order
+            Maintenance Operations
           </Button>
         </div>
       </div>

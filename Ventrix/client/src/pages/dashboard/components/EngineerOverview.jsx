@@ -14,6 +14,8 @@ import {
   UserCheck,
   RotateCw,
   X,
+  FileCheck,
+  ShieldCheck,
 } from "lucide-react";
 import Card from "../../../components/common/Card";
 import Button from "../../../components/common/Button";
@@ -39,6 +41,11 @@ export default function EngineerOverview({
   const [toast, setToast] = useState(null);
   const [approvingReqId, setApprovingReqId] = useState(null);
 
+  // Verification modal / state
+  const [verifyingOrder, setVerifyingOrder] = useState(null);
+  const [verificationNotes, setVerificationNotes] = useState("");
+  const [verifying, setVerifying] = useState(false);
+
   // Quick Assign / Create Work Order Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -46,6 +53,8 @@ export default function EngineerOverview({
     title: "",
     description: "",
     priority: "MEDIUM",
+    maintenance_type: "CORRECTIVE",
+    estimated_duration: "2",
     assigned_to: "",
   });
   const [formError, setFormError] = useState(null);
@@ -91,7 +100,7 @@ export default function EngineerOverview({
     try {
       const res = await inventoryService.approveRequest(req.id);
       if (res?.success) {
-        notify("success", `Approved ${req.quantity}x ${req.part_name}. Stock deducted and issued to job #${req.work_order_id || "general"}.`);
+        notify("success", `Approved technical requisition for ${req.quantity}x ${req.part_name}. Ready for warehouse issuance.`);
         loadSupervisorData();
       } else {
         notify("error", res?.message || "Failed to approve request.");
@@ -108,14 +117,50 @@ export default function EngineerOverview({
   }, []);
 
   // Work order status counts
-  const pendingJobs = workOrders.filter((w) => w.status === "OPEN" || w.status === "ASSIGNED");
-  const inProgressJobs = workOrders.filter((w) => w.status === "IN_PROGRESS");
-  const completedJobs = workOrders.filter((w) => w.status === "COMPLETED" || w.status === "CLOSED");
+  const pendingJobs = workOrders.filter((w) => w.status === "OPEN" || w.status === "ASSIGNED" || w.status === "ACCEPTED");
+  const inProgressJobs = workOrders.filter((w) => w.status === "IN_PROGRESS" || w.status === "WAITING_FOR_PARTS" || w.status === "PARTS_ISSUED");
+  const verificationQueue = workOrders.filter(
+    (w) => w.status === "UNDER_VERIFICATION" || (w.status === "COMPLETED" && !w.verified_by)
+  );
+  const closedJobs = workOrders.filter((w) => w.status === "CLOSED");
 
   // Assets needing attention
   const attentionUnits = safeAssets.filter(
     (a) => (a.health != null && a.health < 75) || a.status === "WARNING" || a.status === "ALARM"
   );
+
+  // Technician active workload map
+  const techActiveCount = useMemo(() => {
+    const map = {};
+    workOrders.forEach((wo) => {
+      if (wo.assigned_to && !["CLOSED", "COMPLETED"].includes(wo.status)) {
+        map[wo.assigned_to] = (map[wo.assigned_to] || 0) + 1;
+      }
+    });
+    return map;
+  }, [workOrders]);
+
+  // Handle engineer verification and closure
+  const handleVerifyAndClose = async (woId) => {
+    setVerifying(true);
+    try {
+      const res = await maintenanceService.verifyAndCloseWorkOrder(woId, {
+        notes: verificationNotes || "Verified compliant with railway HVAC maintenance safety standards.",
+      });
+      if (res?.success) {
+        notify("success", `Work order #${woId} verified & closed successfully.`);
+        setVerifyingOrder(null);
+        setVerificationNotes("");
+        loadSupervisorData();
+      } else {
+        notify("error", res?.message || "Failed to verify work order.");
+      }
+    } catch (err) {
+      notify("error", err?.response?.data?.message || "Verification error.");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   // Handle creating & assigning work order
   const handleCreateWorkOrder = async (e) => {
@@ -133,6 +178,8 @@ export default function EngineerOverview({
         title: createForm.title.trim(),
         description: createForm.description?.trim(),
         priority: createForm.priority,
+        maintenance_type: createForm.maintenance_type || "CORRECTIVE",
+        estimated_duration: createForm.estimated_duration ? Number(createForm.estimated_duration) : undefined,
         assigned_to: createForm.assigned_to ? Number(createForm.assigned_to) : undefined,
       });
 
@@ -143,7 +190,15 @@ export default function EngineerOverview({
 
       notify("success", "Work order created and assigned to technician successfully.");
       setShowCreateModal(false);
-      setCreateForm({ asset_id: "", title: "", description: "", priority: "MEDIUM", assigned_to: "" });
+      setCreateForm({
+        asset_id: "",
+        title: "",
+        description: "",
+        priority: "MEDIUM",
+        maintenance_type: "CORRECTIVE",
+        estimated_duration: "2",
+        assigned_to: "",
+      });
       loadSupervisorData();
     } catch {
       setFormError("Error creating work order.");
@@ -154,12 +209,14 @@ export default function EngineerOverview({
 
   // Quick dispatch from alert
   const openDispatchForAlert = (alert) => {
-    const asset = safeAssets.find((a) => a.id === alert.asset_code || a.name === alert.asset);
+    const asset = safeAssets.find((a) => a.id === alert.asset_code || a.name === alert.asset || a.asset_code === alert.asset_code);
     setCreateForm({
       asset_id: asset?.id ? String(asset.id) : (safeAssets[0]?.id ? String(safeAssets[0].id) : "1"),
-      title: `Fix Issue: ${alert.title || "HVAC Fault"}`,
-      description: alert.message || `Sensor alert reported on ${alert.asset || "HVAC unit"}`,
+      title: `Fix Fault: ${alert.title || "HVAC Issue"}`,
+      description: alert.message || `Sensor alert reported on ${alert.asset_code || "HVAC unit"}`,
       priority: alert.level === "critical" ? "CRITICAL" : "HIGH",
+      maintenance_type: alert.level === "critical" ? "EMERGENCY" : "CORRECTIVE",
+      estimated_duration: "2",
       assigned_to: technicians[0]?.id ? String(technicians[0].id) : "",
     });
     setFormError(null);
@@ -239,12 +296,12 @@ export default function EngineerOverview({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
         <Card hoverEffect={false}>
           <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>
-            Pending Assignment
+            Pending Acceptance
           </div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: "#F59E0B", marginTop: 4 }}>
             {pendingJobs.length}
           </div>
-          <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>Tasks ready to be worked on</div>
+          <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>Dispatched or awaiting tech acceptance</div>
         </Card>
 
         <Card hoverEffect={false}>
@@ -254,17 +311,19 @@ export default function EngineerOverview({
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: "#06B6D4", marginTop: 4 }}>
             {inProgressJobs.length}
           </div>
-          <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>Technicians currently in bay</div>
+          <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>Active in bay / parts issued</div>
         </Card>
 
         <Card hoverEffect={false}>
           <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>
-            Completed Jobs
+            Awaiting Sign-Off
           </div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: "#10B981", marginTop: 4 }}>
-            {completedJobs.length}
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 800, color: verificationQueue.length > 0 ? "#A855F7" : "#10B981", marginTop: 4 }}>
+            {verificationQueue.length}
           </div>
-          <div style={{ fontSize: 12, color: "#10B981", marginTop: 4 }}>Successfully repaired & verified</div>
+          <div style={{ fontSize: 12, color: verificationQueue.length > 0 ? "#A855F7" : "#64748B", marginTop: 4 }}>
+            {verificationQueue.length > 0 ? "Completed jobs requiring review" : "All completed jobs verified"}
+          </div>
         </Card>
 
         <Card hoverEffect={false}>
@@ -275,10 +334,131 @@ export default function EngineerOverview({
             {attentionUnits.length}
           </div>
           <div style={{ fontSize: 12, color: attentionUnits.length > 0 ? "#EF4444" : "#10B981", marginTop: 4 }}>
-            {attentionUnits.length > 0 ? "Issues detected" : "All units healthy"}
+            {attentionUnits.length > 0 ? "Faults or alarms detected" : "All units healthy"}
           </div>
         </Card>
       </div>
+
+      {/* ── ENGINEERING VERIFICATION & SIGN-OFF QUEUE ── */}
+      {verificationQueue.length > 0 && (
+        <div
+          style={{
+            padding: "18px 20px",
+            borderRadius: 14,
+            background: "linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(15, 23, 42, 0.9) 100%)",
+            border: "1.5px solid rgba(168, 85, 247, 0.4)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(168, 85, 247, 0.2)", color: "#C084FC", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <ShieldCheck size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#F8FAFC" }}>
+                  {verificationQueue.length} Completed Job{verificationQueue.length > 1 ? "s" : ""} Awaiting Engineering Sign-Off
+                </div>
+                <div style={{ fontSize: 12, color: "#94A3B8" }}>
+                  Technicians have submitted physical completion reports. Review findings and measurements to officially verify and close tickets.
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigate && onNavigate("maintenance")}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#C084FC",
+                fontWeight: 700,
+                fontSize: 12.5,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              Full Maintenance Board →
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+            {verificationQueue.map((wo) => {
+              const assignedTech = technicians.find((t) => t.id === wo.assigned_to);
+              return (
+                <div
+                  key={wo.id}
+                  style={{
+                    background: "#080E1E",
+                    border: "1px solid rgba(168, 85, 247, 0.25)",
+                    borderRadius: 10,
+                    padding: "14px 16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#fff" }}>
+                        #{wo.id} — {wo.title}
+                      </div>
+                      <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "rgba(168,85,247,0.2)", color: "#C084FC", fontFamily: "'JetBrains Mono', monospace" }}>
+                        {wo.asset_code || `Asset #${wo.asset_id}`}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>
+                      Executed by: <strong style={{ color: "#E2E8F0" }}>{assignedTech?.name || "Technician"}</strong>
+                    </div>
+
+                    {wo.completion_report && (
+                      <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 6, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", fontSize: 12, color: "#CBD5E1" }}>
+                        <span style={{ color: "#94A3B8", fontSize: 11, display: "block", marginBottom: 2 }}>Completion Report:</span>
+                        {(() => {
+                          const repText = typeof wo.completion_report === "string"
+                            ? wo.completion_report
+                            : (wo.completion_report.summary || wo.completion_report.action_taken || wo.completion_report.technician_notes || "Completion report submitted");
+                          return repText.length > 100 ? `${repText.slice(0, 100)}...` : repText;
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                    <button
+                      onClick={() => {
+                        setVerifyingOrder(wo);
+                        setVerificationNotes("");
+                      }}
+                      style={{
+                        padding: "7px 14px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: "#8B5CF6",
+                        color: "#fff",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <FileCheck size={14} />
+                      Inspect & Sign Off
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* PENDING SPARE PART REQUISITION SPOTLIGHT */}
       {pendingPartRequests.length > 0 && (
@@ -673,6 +853,33 @@ export default function EngineerOverview({
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                  Maintenance Type *
+                  <select
+                    value={createForm.maintenance_type}
+                    onChange={(e) => setCreateForm((p) => ({ ...p, maintenance_type: e.target.value }))}
+                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  >
+                    <option value="CORRECTIVE">Corrective (Repair Fault)</option>
+                    <option value="PREVENTIVE">Preventive (Routine Scheduled)</option>
+                    <option value="EMERGENCY">Emergency (Line Disruption)</option>
+                  </select>
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                  Estimated Duration (Hours)
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={createForm.estimated_duration}
+                    onChange={(e) => setCreateForm((p) => ({ ...p, estimated_duration: e.target.value }))}
+                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
                   Priority
                   <select
                     value={createForm.priority}
@@ -694,14 +901,24 @@ export default function EngineerOverview({
                     style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
                   >
                     <option value="">Unassigned (Queue)</option>
-                    {technicians.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} (Technician)
-                      </option>
-                    ))}
+                    {technicians.map((t) => {
+                      const activeJobs = techActiveCount[t.id] || 0;
+                      return (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({activeJobs === 0 ? "Available" : `${activeJobs} active job${activeJobs > 1 ? "s" : ""}`})
+                        </option>
+                      );
+                    })}
                   </select>
                 </label>
               </div>
+
+              {createForm.assigned_to && (techActiveCount[createForm.assigned_to] || 0) >= 2 && (
+                <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(245, 158, 11, 0.12)", border: "1px solid rgba(245, 158, 11, 0.3)", color: "#F59E0B", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                  <AlertTriangle size={15} />
+                  <span>Workload warning: This technician already has {techActiveCount[createForm.assigned_to]} ongoing jobs.</span>
+                </div>
+              )}
 
               <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
                 Maintenance Instructions & Details
@@ -721,6 +938,143 @@ export default function EngineerOverview({
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: VERIFY & CLOSE WORK ORDER ================= */}
+      {verifyingOrder && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(3,7,18,0.75)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 20,
+          }}
+          onClick={() => setVerifyingOrder(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#0B1220",
+              border: "1.5px solid rgba(168, 85, 247, 0.4)",
+              borderRadius: 16,
+              padding: 24,
+              width: 520,
+              maxWidth: "100%",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.8)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(168, 85, 247, 0.2)", color: "#C084FC", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <ShieldCheck size={18} />
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 17, color: "#fff" }}>
+                    Engineering Verification & Sign-Off
+                  </div>
+                  <div style={{ fontSize: 12, color: "#94A3B8" }}>
+                    Work Order #{verifyingOrder.id} — {verifyingOrder.asset_code || `Asset #${verifyingOrder.asset_id}`}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setVerifyingOrder(null)}
+                style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ padding: 12, borderRadius: 10, background: "#060A14", border: "1px solid #1E293B" }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5, color: "#fff" }}>
+                  {verifyingOrder.title}
+                </div>
+                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>
+                  Assigned Tech: <strong>{technicians.find((t) => t.id === verifyingOrder.assigned_to)?.name || "Field Technician"}</strong>
+                </div>
+              </div>
+
+              {verifyingOrder.completion_report ? (
+                <div style={{ padding: 12, borderRadius: 10, background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.25)" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: "#10B981", textTransform: "uppercase", marginBottom: 4 }}>
+                    Technician Physical Completion Report
+                  </div>
+                  <div style={{ fontSize: 13, color: "#E2E8F0", whiteSpace: "pre-wrap" }}>
+                    {typeof verifyingOrder.completion_report === "string"
+                      ? verifyingOrder.completion_report
+                      : (verifyingOrder.completion_report?.summary || verifyingOrder.completion_report?.action_taken || verifyingOrder.completion_report?.technician_notes || "Work completed and verified by technician.")}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: 10, borderRadius: 8, background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.2)", fontSize: 12, color: "#F59E0B" }}>
+                  Technician marked task completed without an extended written report.
+                </div>
+              )}
+
+              {(() => {
+                const fList = Array.isArray(verifyingOrder.findings) && verifyingOrder.findings.length > 0
+                  ? verifyingOrder.findings
+                  : (Array.isArray(verifyingOrder.completion_report?.findings) ? verifyingOrder.completion_report.findings : []);
+                if (fList.length === 0) return null;
+                return (
+                  <div style={{ padding: 10, borderRadius: 8, background: "#060A14", border: "1px solid #1E293B" }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#06B6D4", textTransform: "uppercase", marginBottom: 6 }}>
+                      Recorded Sensor Readings & Field Findings
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {fList.map((f, i) => (
+                        <div key={i} style={{ fontSize: 12, color: "#CBD5E1" }}>
+                          • {typeof f === "string" ? f : `${f.parameter || f.metric || "Item"}: ${f.value || f.finding || ""}`}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                Supervisory Verification Notes & Quality Sign-Off *
+                <textarea
+                  rows={3}
+                  placeholder="Confirm HVAC post-repair test run results, vibration readings, and quality compliance..."
+                  value={verificationNotes}
+                  onChange={(e) => setVerificationNotes(e.target.value)}
+                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}
+                />
+              </label>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
+                <Button type="button" variant="outline" size="sm" onClick={() => setVerifyingOrder(null)}>Cancel</Button>
+                <button
+                  onClick={() => handleVerifyAndClose(verifyingOrder.id)}
+                  disabled={verifying}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: "#8B5CF6",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <ShieldCheck size={16} />
+                  {verifying ? "Signing off..." : "Verify & Officially Close"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

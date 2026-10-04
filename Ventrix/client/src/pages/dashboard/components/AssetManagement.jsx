@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Plus, Search, X, Pencil, Box, Calendar, ShieldCheck,
-  MapPin, Settings2, Activity as ActivityIcon,
+  MapPin, Settings2, Activity as ActivityIcon, Archive,
 } from "lucide-react";
 import {
   getAssets,
   createAsset,
   updateAsset,
+  decommissionAsset,
 } from "../../../services/assetService";
 import { getTelemetryHistory } from "../../../services/telemetryService";
 
@@ -23,6 +24,7 @@ const STATUS_COLOR = {
 const EMPTY_FORM = {
   asset_code: "",
   name: "",
+  asset_type: "Roof-Mounted HVAC Unit",
   product_id: "",
   coach_id: "",
   serial_number: "",
@@ -124,13 +126,14 @@ export default function AssetManagement({ COLORS, Card }) {
     setShowForm(true);
   }
 
-  function openEdit(asset) {
+  const openEdit = (asset) => {
     setEditingCode(asset.asset_code);
     setForm({
       asset_code: asset.asset_code || "",
       name: asset.name || "",
-      product_id: asset.product_id || "",
-      coach_id: asset.coach_id || "",
+      asset_type: asset.asset_type || "Roof-Mounted HVAC Unit",
+      product_id: asset.product_id ? String(asset.product_id) : "",
+      coach_id: asset.coach_id ? String(asset.coach_id) : "",
       serial_number: asset.serial_number || "",
       install_date: asset.install_date ? asset.install_date.slice(0, 10) : "",
       warranty_end: asset.warranty_end ? asset.warranty_end.slice(0, 10) : "",
@@ -139,7 +142,24 @@ export default function AssetManagement({ COLORS, Card }) {
     });
     setFormError(null);
     setShowForm(true);
-  }
+  };
+
+  const handleDecommission = async (assetCode) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to decommission HVAC unit ${assetCode}? This permanently sets status to DECOMMISSIONED and archives it from active rail service.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await decommissionAsset(assetCode);
+      setSelectedCode(null);
+      await load();
+    } catch (err) {
+      setError(err?.response?.data?.message || err.message || "Failed to decommission asset.");
+    }
+  };
 
   async function submitForm(e) {
     e.preventDefault();
@@ -150,9 +170,21 @@ export default function AssetManagement({ COLORS, Card }) {
     setSaving(true);
     setFormError(null);
     try {
+      const payload = {
+        ...form,
+        asset_code: form.asset_code.trim(),
+        name: form.name.trim(),
+        product_id: form.product_id ? parseInt(form.product_id, 10) : null,
+        coach_id: form.coach_id ? parseInt(form.coach_id, 10) : null,
+        install_date: form.install_date || null,
+        warranty_end: form.warranty_end || null,
+        zone: form.zone?.trim() || null,
+        serial_number: form.serial_number?.trim() || null,
+      };
+
       const res = editingCode
-        ? await updateAsset(editingCode, form)
-        : await createAsset(form);
+        ? await updateAsset(editingCode, payload)
+        : await createAsset(payload);
 
       if (!res.success) {
         setFormError(res.message || "Save failed.");
@@ -161,7 +193,7 @@ export default function AssetManagement({ COLORS, Card }) {
       setShowForm(false);
       await load();
     } catch (err) {
-      setFormError("Could not reach the backend.");
+      setFormError(err?.response?.data?.message || err.message || "Could not reach the backend.");
     } finally {
       setSaving(false);
     }
@@ -354,6 +386,7 @@ export default function AssetManagement({ COLORS, Card }) {
             openEdit(selected);
             setSelectedCode(null);
           }}
+          onDecommission={() => handleDecommission(selected.asset_code)}
         />
       )}
     </div>
@@ -495,7 +528,7 @@ function AssetFormModal({ COLORS, form, setForm, onSubmit, onClose, error, savin
             <input value={form.name} onChange={set("name")} placeholder="Coach D2 HVAC Unit" style={textInputStyle(COLORS)} />
           </FormField>
           <FormField COLORS={COLORS} label="Model / Type">
-            <input value={form.zone} onChange={set("zone")} placeholder="e.g. Roof-Mounted HVAC Unit" style={textInputStyle(COLORS)} />
+            <input value={form.asset_type} onChange={set("asset_type")} placeholder="e.g. Roof-Mounted HVAC Unit" style={textInputStyle(COLORS)} />
           </FormField>
           <FormField COLORS={COLORS} label="Serial Number">
             <input value={form.serial_number} onChange={set("serial_number")} placeholder="VT500-007" style={textInputStyle(COLORS)} />
@@ -584,7 +617,7 @@ function DetailRow({ COLORS, icon: Icon, label, value }) {
   );
 }
 
-function AssetDetailsDrawer({ COLORS, asset, onClose, onEdit }) {
+function AssetDetailsDrawer({ COLORS, asset, onClose, onEdit, onDecommission }) {
   const [tab, setTab] = useState("overview");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -679,6 +712,29 @@ function AssetDetailsDrawer({ COLORS, asset, onClose, onEdit }) {
               >
                 <Pencil size={14} /> Edit Asset
               </button>
+
+              {asset.status !== "DECOMMISSIONED" ? (
+                <button
+                  onClick={onDecommission}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    padding: "9px", borderRadius: 10, border: "1px solid rgba(239, 68, 68, 0.3)",
+                    background: "rgba(239, 68, 68, 0.08)", color: "#EF4444", cursor: "pointer", fontSize: 12.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  <Archive size={14} /> Decommission Unit (Archive)
+                </button>
+              ) : (
+                <div
+                  style={{
+                    textAlign: "center", padding: "8px", borderRadius: 8,
+                    background: "rgba(148, 163, 184, 0.1)", color: "#94A3B8", fontSize: 12,
+                  }}
+                >
+                  ✓ Unit Decommissioned & Withdrawn from Service
+                </div>
+              )}
             </div>
           )}
 

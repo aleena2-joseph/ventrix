@@ -42,6 +42,23 @@ export default function TechnicianOverview({ onNavigate }) {
   });
   const [showReportFaultModal, setShowReportFaultModal] = useState(false);
   const [faultForm, setFaultForm] = useState({ asset_id: "", title: "", description: "", priority: "HIGH" });
+  
+  // Completion Report Modal state
+  const [selectedWOForCompletion, setSelectedWOForCompletion] = useState(null);
+  const [completionForm, setCompletionForm] = useState({
+    report: "",
+    tempDrop: "",
+    vibration: "",
+    pressure: "",
+    generalFinding: "",
+  });
+  const [submittingReport, setSubmittingReport] = useState(false);
+
+  // Field Finding Modal state
+  const [selectedWOForFinding, setSelectedWOForFinding] = useState(null);
+  const [findingForm, setFindingForm] = useState({ parameter: "Temperature", value: "", finding: "" });
+  const [submittingFinding, setSubmittingFinding] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
 
@@ -103,36 +120,117 @@ export default function TechnicianOverview({ onNavigate }) {
 
   // Metrics
   const assignedCount = myWorkOrders.length;
-  const pendingCount = myWorkOrders.filter((w) => w.status === "OPEN" || w.status === "ASSIGNED").length;
-  const inProgressCount = myWorkOrders.filter((w) => w.status === "IN_PROGRESS").length;
-  const completedCount = myWorkOrders.filter((w) => w.status === "COMPLETED" || w.status === "CLOSED").length;
+  const pendingCount = myWorkOrders.filter((w) => w.status === "OPEN" || w.status === "ASSIGNED" || w.status === "ACCEPTED").length;
+  const inProgressCount = myWorkOrders.filter((w) => w.status === "IN_PROGRESS" || w.status === "WAITING_FOR_PARTS" || w.status === "PARTS_ISSUED").length;
+  const underVerificationCount = myWorkOrders.filter((w) => w.status === "UNDER_VERIFICATION" || (w.status === "COMPLETED" && !w.verified_by)).length;
+  const completedCount = myWorkOrders.filter((w) => w.status === "CLOSED").length;
 
   // Urgent Job Spotlight (Highest priority active job)
   const urgentJob = useMemo(() => {
-    const active = myWorkOrders.filter((w) => w.status !== "COMPLETED" && w.status !== "CLOSED");
-    const critical = active.find((w) => w.priority === "CRITICAL");
+    const active = myWorkOrders.filter((w) => w.status !== "CLOSED");
+    const critical = active.find((w) => w.priority === "CRITICAL" && w.status !== "UNDER_VERIFICATION");
     if (critical) return critical;
-    const high = active.find((w) => w.priority === "HIGH");
+    const high = active.find((w) => w.priority === "HIGH" && w.status !== "UNDER_VERIFICATION");
     if (high) return high;
     return active[0] || null;
   }, [myWorkOrders]);
 
-  // Status Change Handler
-  const handleStatusChange = async (woId, nextStatus) => {
-    if (nextStatus === "COMPLETED") {
-      // Check if there are pending part requests for this work order
-      const pendingReqs = partRequests.filter(
-        (r) => r.work_order_id === woId && r.status === "PENDING"
-      );
-      if (pendingReqs.length > 0) {
-        notify(
-          "error",
-          `Cannot complete job: ${pendingReqs.length} spare part request(s) are awaiting Admin/Engineer approval.`
-        );
-        return;
+  // Accept assigned job
+  const handleAcceptJob = async (woId) => {
+    try {
+      const res = await maintenanceService.acceptWorkOrder(woId);
+      if (res?.success) {
+        notify("success", `Job #${woId} accepted. You can now start physical work.`);
+        loadTechData();
+      } else {
+        notify("error", res?.message || "Failed to accept job.");
       }
+    } catch {
+      notify("error", "Error accepting job.");
+    }
+  };
+
+  // Start physical work
+  const handleStartWork = async (woId) => {
+    try {
+      const res = await maintenanceService.updateWorkOrderStatus(woId, "IN_PROGRESS");
+      if (res?.success) {
+        notify("success", `Work started on job #${woId}. Track actions and record readings.`);
+        loadTechData();
+      } else {
+        notify("error", res?.message || "Failed to start work.");
+      }
+    } catch {
+      notify("error", "Error starting work.");
+    }
+  };
+
+  // Submit physical completion report
+  const handleSubmitCompletionReport = async (e) => {
+    e.preventDefault();
+    if (!completionForm.report.trim()) {
+      setFormError("Please enter a summary of physical work performed.");
+      return;
     }
 
+    setSubmittingReport(true);
+    setFormError(null);
+    try {
+      const findings = [];
+      if (completionForm.tempDrop) findings.push({ parameter: "Delta Temperature", value: `${completionForm.tempDrop} °C`, finding: "Temperature drop post-service" });
+      if (completionForm.vibration) findings.push({ parameter: "Vibration Amplitude", value: `${completionForm.vibration} mm/s`, finding: "Post-maintenance vibration check" });
+      if (completionForm.pressure) findings.push({ parameter: "Refrigerant Pressure", value: `${completionForm.pressure} PSI`, finding: "Operational head pressure" });
+      if (completionForm.generalFinding) findings.push({ parameter: "Field Note", value: completionForm.generalFinding, finding: "Technician remark" });
+
+      const res = await maintenanceService.submitCompletionReport(selectedWOForCompletion.id, {
+        completion_report: completionForm.report.trim(),
+        findings,
+      });
+
+      if (res?.success) {
+        notify("success", `Completion report submitted for Job #${selectedWOForCompletion.id}. Handed off to Engineer for verification.`);
+        setSelectedWOForCompletion(null);
+        setCompletionForm({ report: "", tempDrop: "", vibration: "", pressure: "", generalFinding: "" });
+        loadTechData();
+      } else {
+        setFormError(res?.message || "Failed to submit completion report.");
+      }
+    } catch {
+      setFormError("Error submitting completion report.");
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
+  // Submit sensor finding
+  const handleSubmitFinding = async (e) => {
+    e.preventDefault();
+    if (!findingForm.value.trim() && !findingForm.finding.trim()) {
+      setFormError("Please enter a measured value or note.");
+      return;
+    }
+
+    setSubmittingFinding(true);
+    setFormError(null);
+    try {
+      const res = await maintenanceService.addFindingToWorkOrder(selectedWOForFinding.id, findingForm);
+      if (res?.success) {
+        notify("success", `Finding recorded for Job #${selectedWOForFinding.id}.`);
+        setSelectedWOForFinding(null);
+        setFindingForm({ parameter: "Temperature", value: "", finding: "" });
+        loadTechData();
+      } else {
+        setFormError(res?.message || "Failed to record finding.");
+      }
+    } catch {
+      setFormError("Error recording finding.");
+    } finally {
+      setSubmittingFinding(false);
+    }
+  };
+
+  // Status Change Handler (fallback)
+  const handleStatusChange = async (woId, nextStatus) => {
     try {
       const res = await maintenanceService.updateWorkOrderStatus(woId, nextStatus);
       if (res?.success) {
@@ -426,10 +524,32 @@ export default function TechnicianOverview({ onNavigate }) {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            {urgentJob.status !== "IN_PROGRESS" ? (
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {(urgentJob.status === "OPEN" || urgentJob.status === "ASSIGNED") && (
               <button
-                onClick={() => handleStatusChange(urgentJob.id, "IN_PROGRESS")}
+                onClick={() => handleAcceptJob(urgentJob.id)}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#F59E0B",
+                  color: "#000",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <CheckCircle2 size={15} />
+                Accept Job
+              </button>
+            )}
+
+            {urgentJob.status === "ACCEPTED" && (
+              <button
+                onClick={() => handleStartWork(urgentJob.id)}
                 style={{
                   padding: "10px 18px",
                   borderRadius: 8,
@@ -447,33 +567,81 @@ export default function TechnicianOverview({ onNavigate }) {
                 <Play size={14} fill="#000" />
                 Start Work
               </button>
-            ) : (
-              <button
-                onClick={() => handleStatusChange(urgentJob.id, "COMPLETED")}
-                style={{
-                  padding: "10px 18px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "#10B981",
-                  color: "#000",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <Check size={14} />
-                Complete Job
-              </button>
+            )}
+
+            {(urgentJob.status === "IN_PROGRESS" || urgentJob.status === "PARTS_ISSUED") && (
+              <>
+                <button
+                  onClick={() => {
+                    setSelectedWOForCompletion(urgentJob);
+                    setFormError(null);
+                  }}
+                  style={{
+                    padding: "10px 18px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: "#10B981",
+                    color: "#000",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <FileText size={15} />
+                  Submit Completion Report
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedWOForFinding(urgentJob);
+                    setFormError(null);
+                  }}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #1E293B",
+                    background: "#0B1220",
+                    color: "#06B6D4",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Plus size={14} />
+                  Record Reading
+                </button>
+              </>
+            )}
+
+            {urgentJob.status === "WAITING_FOR_PARTS" && (
+              <span style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(245,158,11,0.15)", color: "#F59E0B", fontSize: 12.5, fontWeight: 700 }}>
+                Waiting for Depot Parts
+              </span>
+            )}
+
+            {urgentJob.status === "UNDER_VERIFICATION" && (
+              <span style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(168,85,247,0.15)", color: "#C084FC", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                <Clock size={14} />
+                Awaiting Engineer Sign-Off
+              </span>
             )}
 
             <button
               onClick={() => {
                 setFormError(null);
                 setSelectedWOForPart(urgentJob);
-                setPartUsageForm({ part_id: parts[0]?.id ? String(parts[0].id) : "", quantity: 1, notes: "" });
+                setPartRequestForm({
+                  part_id: parts[0]?.id ? String(parts[0].id) : "",
+                  quantity: 1,
+                  urgency: urgentJob.priority === "CRITICAL" ? "CRITICAL" : "MEDIUM",
+                  reason: `Required for Work Order #${urgentJob.id} - ${urgentJob.title}`,
+                });
               }}
               style={{
                 padding: "10px 14px",
@@ -490,7 +658,7 @@ export default function TechnicianOverview({ onNavigate }) {
               }}
             >
               <Package size={15} color="#F59E0B" />
-              + Use Spare Part
+              Request Spare Part
             </button>
           </div>
         </div>
@@ -678,11 +846,29 @@ export default function TechnicianOverview({ onNavigate }) {
                     {wo.status}
                   </span>
 
-                  {!isDone && (
+                  {wo.status !== "CLOSED" && (
                     <>
-                      {wo.status !== "IN_PROGRESS" ? (
+                      {(wo.status === "OPEN" || wo.status === "ASSIGNED") && (
                         <button
-                          onClick={() => handleStatusChange(wo.id, "IN_PROGRESS")}
+                          onClick={() => handleAcceptJob(wo.id)}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: 6,
+                            border: "none",
+                            background: "#F59E0B",
+                            color: "#000",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Accept
+                        </button>
+                      )}
+
+                      {wo.status === "ACCEPTED" && (
+                        <button
+                          onClick={() => handleStartWork(wo.id)}
                           style={{
                             padding: "6px 12px",
                             borderRadius: 6,
@@ -696,53 +882,87 @@ export default function TechnicianOverview({ onNavigate }) {
                         >
                           Start Work
                         </button>
-                      ) : (
+                      )}
+
+                      {(wo.status === "IN_PROGRESS" || wo.status === "PARTS_ISSUED") && (
+                        <>
+                          <button
+                            onClick={() => {
+                              setSelectedWOForCompletion(wo);
+                              setFormError(null);
+                            }}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 6,
+                              border: "none",
+                              background: "#10B981",
+                              color: "#000",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Submit Report
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedWOForFinding(wo);
+                              setFormError(null);
+                            }}
+                            title="Record sensor reading or diagnostic measurement"
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 6,
+                              border: "1px solid #1E293B",
+                              background: "#060A14",
+                              color: "#06B6D4",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            + Reading
+                          </button>
+                        </>
+                      )}
+
+                      {wo.status === "UNDER_VERIFICATION" && (
+                        <span style={{ fontSize: 11.5, color: "#C084FC", fontWeight: 600 }}>
+                          Under Verification
+                        </span>
+                      )}
+
+                      {wo.status !== "UNDER_VERIFICATION" && (
                         <button
-                          onClick={() => handleStatusChange(wo.id, "COMPLETED")}
+                          title="Submit spare part requisition for supervisor approval"
+                          onClick={() => {
+                            setFormError(null);
+                            setSelectedWOForPart(wo);
+                            setPartRequestForm({
+                              part_id: parts[0]?.id ? String(parts[0].id) : "",
+                              quantity: 1,
+                              urgency: wo.priority === "CRITICAL" ? "CRITICAL" : "MEDIUM",
+                              reason: `Required for Work Order #${wo.id} - ${wo.title}`,
+                            });
+                          }}
                           style={{
                             padding: "6px 12px",
                             borderRadius: 6,
-                            border: "none",
-                            background: "#10B981",
-                            color: "#000",
+                            border: "1px solid #1E293B",
+                            background: "#0B1220",
+                            color: "#F59E0B",
                             fontSize: 12,
-                            fontWeight: 700,
+                            fontWeight: 600,
                             cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
                           }}
                         >
-                          Mark Done
+                          <Package size={14} />
+                          + Request Part
                         </button>
                       )}
-
-                      <button
-                        title="Submit spare part requisition for supervisor approval"
-                        onClick={() => {
-                          setFormError(null);
-                          setSelectedWOForPart(wo);
-                          setPartRequestForm({
-                            part_id: parts[0]?.id ? String(parts[0].id) : "",
-                            quantity: 1,
-                            urgency: wo.priority === "CRITICAL" ? "CRITICAL" : "MEDIUM",
-                            reason: `Required for Work Order #${wo.id} - ${wo.title}`,
-                          });
-                        }}
-                        style={{
-                          padding: "6px 12px",
-                          borderRadius: 6,
-                          border: "1px solid #1E293B",
-                          background: "#0B1220",
-                          color: "#F59E0B",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                        }}
-                      >
-                        <Package size={14} />
-                        + Request Part
-                      </button>
                     </>
                   )}
                 </div>
@@ -1105,6 +1325,260 @@ export default function TechnicianOverview({ onNavigate }) {
                 <Button type="button" variant="outline" size="sm" onClick={() => setShowReportFaultModal(false)}>Cancel</Button>
                 <Button type="submit" variant="glow" size="sm" disabled={saving}>
                   {saving ? "Creating Work Order..." : "Create Work Order"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: SUBMIT COMPLETION REPORT ================= */}
+      {selectedWOForCompletion && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(3,7,18,0.75)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 20,
+          }}
+          onClick={() => setSelectedWOForCompletion(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#0B1220",
+              border: "1.5px solid rgba(16, 185, 129, 0.4)",
+              borderRadius: 16,
+              padding: 24,
+              width: 520,
+              maxWidth: "100%",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.8)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(16, 185, 129, 0.2)", color: "#10B981", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 17, color: "#fff" }}>
+                    Submit Completion Report & Handoff
+                  </div>
+                  <div style={{ fontSize: 12, color: "#94A3B8" }}>
+                    Job #{selectedWOForCompletion.id} — {selectedWOForCompletion.asset_code || `Asset #${selectedWOForCompletion.asset_id}`}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedWOForCompletion(null)}
+                style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {formError && (
+              <div style={{ padding: 10, borderRadius: 8, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 12.5, marginBottom: 14 }}>
+                {formError}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitCompletionReport} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                Physical Work Summary & Actions Taken *
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Detail actions taken (e.g., Cleaned condenser coils, replaced compressor motor contactor, inspected fan belt, executed 20-min test cycle)..."
+                  value={completionForm.report}
+                  onChange={(e) => setCompletionForm((p) => ({ ...p, report: e.target.value }))}
+                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}
+                />
+              </label>
+
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#06B6D4", marginTop: 4 }}>
+                Post-Service Sensor Measurements & Verification Checks:
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5, color: "#94A3B8" }}>
+                  Delta Temp (°C)
+                  <input
+                    type="text"
+                    placeholder="e.g. 7.5"
+                    value={completionForm.tempDrop}
+                    onChange={(e) => setCompletionForm((p) => ({ ...p, tempDrop: e.target.value }))}
+                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5, color: "#94A3B8" }}>
+                  Vibration (mm/s)
+                  <input
+                    type="text"
+                    placeholder="e.g. 1.8"
+                    value={completionForm.vibration}
+                    onChange={(e) => setCompletionForm((p) => ({ ...p, vibration: e.target.value }))}
+                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5, color: "#94A3B8" }}>
+                  Pressure (PSI)
+                  <input
+                    type="text"
+                    placeholder="e.g. 65"
+                    value={completionForm.pressure}
+                    onChange={(e) => setCompletionForm((p) => ({ ...p, pressure: e.target.value }))}
+                    style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
+                  />
+                </label>
+              </div>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                Additional Notes for Maintenance Engineer
+                <input
+                  type="text"
+                  placeholder="e.g. Unit running smoothly, recommend checking filter in 14 days"
+                  value={completionForm.generalFinding}
+                  onChange={(e) => setCompletionForm((p) => ({ ...p, generalFinding: e.target.value }))}
+                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "9px 12px", fontSize: 13 }}
+                />
+              </label>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedWOForCompletion(null)}>Cancel</Button>
+                <button
+                  type="submit"
+                  disabled={submittingReport}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: "#10B981",
+                    color: "#000",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <CheckSquare size={16} />
+                  {submittingReport ? "Submitting..." : "Submit to Engineer"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: RECORD FIELD FINDING ================= */}
+      {selectedWOForFinding && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(3,7,18,0.75)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 20,
+          }}
+          onClick={() => setSelectedWOForFinding(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#0B1220",
+              border: "1.5px solid #06B6D455",
+              borderRadius: 16,
+              padding: 24,
+              width: 440,
+              maxWidth: "100%",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.8)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(6, 182, 212, 0.2)", color: "#06B6D4", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Plus size={18} />
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 17, color: "#fff" }}>
+                    Record Sensor Reading / Finding
+                  </div>
+                  <div style={{ fontSize: 12, color: "#94A3B8" }}>
+                    Job #{selectedWOForFinding.id} — {selectedWOForFinding.title}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedWOForFinding(null)}
+                style={{ background: "transparent", border: "none", color: "#64748B", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {formError && (
+              <div style={{ padding: 10, borderRadius: 8, background: "#EF444419", border: "1px solid #EF444455", color: "#EF4444", fontSize: 12.5, marginBottom: 14 }}>
+                {formError}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitFinding} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                Diagnostic Parameter
+                <select
+                  value={findingForm.parameter}
+                  onChange={(e) => setFindingForm((p) => ({ ...p, parameter: e.target.value }))}
+                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                >
+                  <option value="Temperature">Temperature / Differential</option>
+                  <option value="Vibration">Vibration Amplitude</option>
+                  <option value="Current Draw">Motor Current / Electrical Draw</option>
+                  <option value="Refrigerant Pressure">Refrigerant Pressure</option>
+                  <option value="Air Flow">Air Flow / Duct Velocity</option>
+                  <option value="Physical Inspection">Physical Inspection Finding</option>
+                </select>
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                Measured Value
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 19.5 °C or 2.1 mm/s or 14.2 A"
+                  value={findingForm.value}
+                  onChange={(e) => setFindingForm((p) => ({ ...p, value: e.target.value }))}
+                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13.5 }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                Field Observation Notes
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Reading stabilized after 10 min runtime..."
+                  value={findingForm.finding}
+                  onChange={(e) => setFindingForm((p) => ({ ...p, finding: e.target.value }))}
+                  style={{ background: "#040914", color: "#fff", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}
+                />
+              </label>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedWOForFinding(null)}>Cancel</Button>
+                <Button type="submit" variant="glow" size="sm" disabled={submittingFinding}>
+                  {submittingFinding ? "Saving..." : "Save Finding"}
                 </Button>
               </div>
             </form>

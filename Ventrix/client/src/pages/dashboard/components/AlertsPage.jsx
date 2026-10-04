@@ -10,6 +10,7 @@ import {
   Wrench,
   X,
   Plus,
+  Eye,
 } from "lucide-react";
 import Card from "../../../components/common/Card";
 import Button from "../../../components/common/Button";
@@ -37,10 +38,18 @@ export default function AlertsPage({ onNavigate }) {
   const [levelFilter, setLevelFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   const [resolvingId, setResolvingId] = useState(null);
+  const [acknowledgingId, setAcknowledgingId] = useState(null);
 
   // Work order escalation modal
   const [escalatingAlert, setEscalatingAlert] = useState(null);
-  const [woForm, setWoForm] = useState({ title: "", description: "", priority: "HIGH", asset_id: "" });
+  const [woForm, setWoForm] = useState({
+    title: "",
+    description: "",
+    priority: "HIGH",
+    asset_id: "",
+    maintenance_type: "CORRECTIVE",
+    estimated_duration_hours: 2,
+  });
   const [creatingWO, setCreatingWO] = useState(false);
 
   const canManageAlerts = can("alerts.manage");
@@ -87,6 +96,23 @@ export default function AlertsPage({ onNavigate }) {
     }
   };
 
+  const handleAcknowledge = async (alertId) => {
+    setAcknowledgingId(alertId);
+    try {
+      const res = await alertService.acknowledge(alertId);
+      if (res.success) {
+        notify("success", "Alert acknowledged and logged under your engineer ID.");
+        loadAlerts();
+      } else {
+        notify("error", res.message || "Failed to acknowledge alert.");
+      }
+    } catch {
+      notify("error", "Error acknowledging alert.");
+    } finally {
+      setAcknowledgingId(null);
+    }
+  };
+
   const handleOpenEscalate = (alert) => {
     const matchedAsset = assets.find((a) => a.asset_code === alert.asset_code || a.id === alert.asset_id);
     setEscalatingAlert(alert);
@@ -95,6 +121,8 @@ export default function AlertsPage({ onNavigate }) {
       title: `[Alert #${alert.id}] ${alert.title}`,
       description: `Auto-escalated from anomaly alert: ${alert.message || alert.title}. Logged on asset ${alert.asset_code}.`,
       priority: alert.level === "critical" ? "HIGH" : "MEDIUM",
+      maintenance_type: "CORRECTIVE",
+      estimated_duration_hours: 2,
     });
   };
 
@@ -112,6 +140,8 @@ export default function AlertsPage({ onNavigate }) {
         description: woForm.description,
         priority: woForm.priority,
         alert_id: escalatingAlert?.id,
+        maintenance_type: woForm.maintenance_type || "CORRECTIVE",
+        estimated_duration_hours: Number(woForm.estimated_duration_hours) || 2,
         status: "OPEN",
       });
       if (res.success) {
@@ -121,14 +151,15 @@ export default function AlertsPage({ onNavigate }) {
       } else {
         notify("error", res.message || "Failed to create work order.");
       }
-    } catch {
-      notify("error", "Failed to create work order.");
+    } catch (err) {
+      notify("error", err?.response?.data?.message || err.message || "Failed to create work order.");
     } finally {
       setCreatingWO(false);
     }
   };
 
   const filtered = alerts.filter((a) => {
+    if (tab === "unack" && (a.is_acknowledged || a.is_resolved)) return false;
     if (levelFilter !== "ALL" && a.level !== levelFilter.toLowerCase()) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -196,6 +227,7 @@ export default function AlertsPage({ onNavigate }) {
           <div style={{ display: "flex", gap: 6, background: "rgba(0,0,0,0.25)", padding: 3, borderRadius: 8 }}>
             {[
               { id: "active", label: "Active Anomalies" },
+              { id: "unack", label: "Unacknowledged" },
               { id: "resolved", label: "Resolved History" },
               { id: "all", label: "All Alerts" },
             ].map((t) => (
@@ -340,6 +372,22 @@ export default function AlertsPage({ onNavigate }) {
                       <span>Source: <strong>{a.source || "telemetry"}</strong></span>
                       <span>·</span>
                       <span>Logged: {new Date(a.created_at).toLocaleString()}</span>
+                      {a.is_acknowledged && (
+                        <>
+                          <span>·</span>
+                          <span style={{ color: "#38BDF8", fontWeight: 600 }}>
+                            ✓ Ack: {a.acknowledged_by_username || "Logged"}
+                          </span>
+                        </>
+                      )}
+                      {a.work_order_number && (
+                        <>
+                          <span>·</span>
+                          <span style={{ color: "#F59E0B", fontWeight: 600 }}>
+                            📋 WO: {a.work_order_number}
+                          </span>
+                        </>
+                      )}
                       {isResolved && (
                         <>
                           <span>·</span>
@@ -351,25 +399,67 @@ export default function AlertsPage({ onNavigate }) {
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {!isResolved && canManageMaintenance && (
+                  {!isResolved && !a.is_acknowledged && canManageAlerts && (
                     <button
-                      onClick={() => handleOpenEscalate(a)}
+                      onClick={() => handleAcknowledge(a.id)}
+                      disabled={acknowledgingId === a.id}
                       style={{
-                        background: "rgba(245, 158, 11, 0.12)",
-                        border: "1px solid rgba(245, 158, 11, 0.3)",
+                        background: "rgba(56, 189, 248, 0.12)",
+                        border: "1px solid rgba(56, 189, 248, 0.3)",
                         borderRadius: 6,
                         padding: "6px 11px",
-                        color: "#F59E0B",
+                        color: "#38BDF8",
                         fontSize: 12,
                         fontWeight: 600,
                         cursor: "pointer",
                         display: "flex",
                         alignItems: "center",
-                        gap: 6,
+                        gap: 5,
                       }}
+                      title="Acknowledge receipt and log inspection"
                     >
-                      <Wrench size={13} /> Create Work Order
+                      <Eye size={13} /> {acknowledgingId === a.id ? "..." : "Acknowledge"}
                     </button>
+                  )}
+
+                  {!isResolved && canManageMaintenance && (
+                    a.work_order_number ? (
+                      <span
+                        style={{
+                          background: "rgba(245, 158, 11, 0.1)",
+                          border: "1px solid rgba(245, 158, 11, 0.25)",
+                          borderRadius: 6,
+                          padding: "6px 10px",
+                          color: "#F59E0B",
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <Wrench size={12} /> Active WO #{a.work_order_number}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenEscalate(a)}
+                        style={{
+                          background: "rgba(245, 158, 11, 0.12)",
+                          border: "1px solid rgba(245, 158, 11, 0.3)",
+                          borderRadius: 6,
+                          padding: "6px 11px",
+                          color: "#F59E0B",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Wrench size={13} /> Create Work Order
+                      </button>
+                    )
                   )}
 
                   {!isResolved && canManageAlerts && (
@@ -510,6 +600,49 @@ export default function AlertsPage({ onNavigate }) {
                   <option value="MEDIUM">Medium</option>
                   <option value="LOW">Low</option>
                 </select>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 5 }}>Maintenance Type</label>
+                  <select
+                    value={woForm.maintenance_type}
+                    onChange={(e) => setWoForm({ ...woForm, maintenance_type: e.target.value })}
+                    style={{
+                      width: "100%",
+                      background: "#0B1120",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 6,
+                      padding: "8px 10px",
+                      color: "inherit",
+                      fontSize: 13,
+                    }}
+                  >
+                    <option value="CORRECTIVE">Corrective (Breakdown)</option>
+                    <option value="PREVENTIVE">Preventive (Routine)</option>
+                    <option value="EMERGENCY">Emergency (Critical)</option>
+                    <option value="INSPECTION">Trip Inspection</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 5 }}>Estimated Duration (Hrs)</label>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={woForm.estimated_duration_hours}
+                    onChange={(e) => setWoForm({ ...woForm, estimated_duration_hours: e.target.value })}
+                    style={{
+                      width: "100%",
+                      background: "#0B1120",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 6,
+                      padding: "8px 10px",
+                      color: "inherit",
+                      fontSize: 13,
+                    }}
+                  />
+                </div>
               </div>
 
               <div>

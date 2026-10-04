@@ -10,24 +10,31 @@ import { useAuth } from "../../../context/AuthContext";
 const WO_STATUSES = [
   "OPEN",
   "ASSIGNED",
+  "ACCEPTED",
   "IN_PROGRESS",
   "WAITING_FOR_PARTS",
+  "PARTS_ISSUED",
   "COMPLETED",
+  "UNDER_VERIFICATION",
   "CLOSED",
 ];
 
 const STATUS_COLOR = {
   OPEN: { c: "#94A3B8", bg: "rgba(148, 163, 184, 0.12)" },
   ASSIGNED: { c: "#F59E0B", bg: "rgba(245, 158, 11, 0.12)" },
+  ACCEPTED: { c: "#3B82F6", bg: "rgba(59, 130, 246, 0.12)" },
   IN_PROGRESS: { c: "#06B6D4", bg: "rgba(6, 182, 212, 0.12)" },
   WAITING_FOR_PARTS: { c: "#EC4899", bg: "rgba(236, 72, 153, 0.12)" },
+  PARTS_ISSUED: { c: "#8B5CF6", bg: "rgba(139, 92, 246, 0.12)" },
   COMPLETED: { c: "#10B981", bg: "rgba(16, 185, 129, 0.12)" },
+  UNDER_VERIFICATION: { c: "#C084FC", bg: "rgba(192, 132, 252, 0.15)" },
   CLOSED: { c: "#64748B", bg: "rgba(100, 116, 139, 0.12)" },
 };
 
 export default function MaintenancePage({ COLORS, Card, role }) {
   const { user, can, isVentrixRole } = useAuth();
   const canManage = can("maintenance.manage");
+  const canVerify = can("maintenance.verify") || user?.role === "ENGINEER" || user?.role === "ADMIN" || user?.role === "VENTRIX_ADMIN";
   const isTechnician = user?.role === "TECHNICIAN" || user?.role_name === "TECHNICIAN" || role === "TECHNICIAN";
   const canApprove = user?.role === "ADMIN" || user?.role === "VENTRIX_ADMIN" || user?.role === "ENGINEER" || can("inventory.manage");
 
@@ -39,6 +46,11 @@ export default function MaintenancePage({ COLORS, Card, role }) {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
 
+  // Verification modal state
+  const [verifyWO, setVerifyWO] = useState(null);
+  const [verifyNotes, setVerifyNotes] = useState("");
+  const [verifying, setVerifying] = useState(false);
+
   // New Work Order Modal
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
@@ -46,6 +58,8 @@ export default function MaintenancePage({ COLORS, Card, role }) {
     title: "",
     description: "",
     priority: "MEDIUM",
+    maintenance_type: "CORRECTIVE",
+    estimated_duration: "2",
     assigned_to: "",
   });
   const [formError, setFormError] = useState(null);
@@ -115,6 +129,8 @@ export default function MaintenancePage({ COLORS, Card, role }) {
         title: form.title,
         description: form.description,
         priority: form.priority,
+        maintenance_type: form.maintenance_type || "CORRECTIVE",
+        estimated_duration: form.estimated_duration ? Number(form.estimated_duration) : undefined,
         assigned_to: form.assigned_to ? Number(form.assigned_to) : undefined,
       });
 
@@ -125,12 +141,33 @@ export default function MaintenancePage({ COLORS, Card, role }) {
 
       notify("success", `Work Order #${res.data.id} created successfully.`);
       setShowForm(false);
-      setForm({ asset_id: "", title: "", description: "", priority: "MEDIUM", assigned_to: "" });
+      setForm({ asset_id: "", title: "", description: "", priority: "MEDIUM", maintenance_type: "CORRECTIVE", estimated_duration: "2", assigned_to: "" });
       loadData();
     } catch {
       setFormError("Failed to create work order.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleVerifyAndClose(woId) {
+    setVerifying(true);
+    try {
+      const res = await maintenanceService.verifyAndCloseWorkOrder(woId, {
+        notes: verifyNotes || "Verified compliant with railway HVAC standards.",
+      });
+      if (res?.success) {
+        notify("success", `Work Order #${woId} verified & closed by engineering ✓`);
+        setVerifyWO(null);
+        setVerifyNotes("");
+        loadData();
+      } else {
+        notify("error", res?.message || "Failed to verify work order.");
+      }
+    } catch {
+      notify("error", "Error during verification.");
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -318,15 +355,18 @@ export default function MaintenancePage({ COLORS, Card, role }) {
               <tr style={{ textAlign: "left", color: "#94A3B8", fontSize: 11.5, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 <th style={{ padding: "10px 8px" }}>ID & Title</th>
                 <th style={{ padding: "10px 8px" }}>Asset Code</th>
+                <th style={{ padding: "10px 8px" }}>Type</th>
                 <th style={{ padding: "10px 8px" }}>Assigned Technician</th>
                 <th style={{ padding: "10px 8px" }}>Priority</th>
                 <th style={{ padding: "10px 8px" }}>Status Transition</th>
-                <th style={{ padding: "10px 8px", textAlign: "right" }}>Parts</th>
+                <th style={{ padding: "10px 8px", textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {workOrders.map((w) => {
                 const statusMeta = STATUS_COLOR[w.status] || STATUS_COLOR.OPEN;
+                const mType = w.maintenance_type || "CORRECTIVE";
+                const typeColor = mType === "EMERGENCY" ? "#EF4444" : mType === "PREVENTIVE" ? "#10B981" : "#06B6D4";
 
                 return (
                   <tr key={w.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
@@ -339,6 +379,22 @@ export default function MaintenancePage({ COLORS, Card, role }) {
 
                     <td style={{ padding: "12px 8px", fontFamily: "'JetBrains Mono', monospace", color: "#06B6D4" }}>
                       {w.asset_code || `Asset #${w.asset_id}`}
+                    </td>
+
+                    <td style={{ padding: "12px 8px" }}>
+                      <span
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: typeColor,
+                          background: `${typeColor}18`,
+                          border: `1px solid ${typeColor}33`,
+                        }}
+                      >
+                        {mType}
+                      </span>
                     </td>
 
                     <td style={{ padding: "12px 8px" }}>
@@ -364,33 +420,57 @@ export default function MaintenancePage({ COLORS, Card, role }) {
                     </td>
 
                     <td style={{ padding: "12px 8px" }}>
-                      {canManage ? (
-                        <select
-                          value={w.status}
-                          onChange={(e) => changeStatus(w.id, e.target.value)}
-                          style={{
-                            background: statusMeta.bg,
-                            color: statusMeta.c,
-                            border: `1px solid ${statusMeta.c}44`,
-                            borderRadius: 6,
-                            padding: "4px 8px",
-                            fontSize: 12,
-                            fontWeight: 600,
-                            outline: "none",
-                            cursor: "pointer",
-                          }}
-                        >
-                          {WO_STATUSES.map((s) => (
-                            <option key={s} value={s} style={{ background: "#131C31", color: "#fff" }}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span style={{ padding: "3px 8px", borderRadius: 6, color: statusMeta.c, background: statusMeta.bg, fontSize: 11.5, fontWeight: 600 }}>
-                          {w.status}
-                        </span>
-                      )}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        {canManage ? (
+                          <select
+                            value={w.status}
+                            onChange={(e) => changeStatus(w.id, e.target.value)}
+                            style={{
+                              background: statusMeta.bg,
+                              color: statusMeta.c,
+                              border: `1px solid ${statusMeta.c}44`,
+                              borderRadius: 6,
+                              padding: "4px 8px",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              outline: "none",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {WO_STATUSES.map((s) => (
+                              <option key={s} value={s} style={{ background: "#131C31", color: "#fff" }}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span style={{ padding: "3px 8px", borderRadius: 6, color: statusMeta.c, background: statusMeta.bg, fontSize: 11.5, fontWeight: 600 }}>
+                            {w.status}
+                          </span>
+                        )}
+
+                        {canVerify && (w.status === "UNDER_VERIFICATION" || (w.status === "COMPLETED" && !w.verified_by)) && (
+                          <button
+                            onClick={() => {
+                              setVerifyWO(w);
+                              setVerifyNotes("");
+                            }}
+                            title="Review technician report and officially sign off"
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: 6,
+                              border: "none",
+                              background: "#8B5CF6",
+                              color: "#fff",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Sign Off ✓
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     <td style={{ padding: "12px 8px", textAlign: "right" }}>
@@ -496,6 +576,33 @@ export default function MaintenancePage({ COLORS, Card, role }) {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
+                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 4 }}>Maintenance Type</label>
+                  <select
+                    value={form.maintenance_type}
+                    onChange={(e) => setForm({ ...form, maintenance_type: e.target.value })}
+                    style={{ width: "100%", background: "#0B1120", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "8px 10px", color: "inherit", fontSize: 13 }}
+                  >
+                    <option value="CORRECTIVE">Corrective (Repair)</option>
+                    <option value="PREVENTIVE">Preventive (Routine)</option>
+                    <option value="EMERGENCY">Emergency (Line Stop)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 4 }}>Estimated Duration (Hrs)</label>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={form.estimated_duration}
+                    onChange={(e) => setForm({ ...form, estimated_duration: e.target.value })}
+                    style={{ width: "100%", background: "#0B1120", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "8px 10px", color: "inherit", fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
                   <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 4 }}>Assign Technician</label>
                   <select
                     value={form.assigned_to}
@@ -544,6 +651,101 @@ export default function MaintenancePage({ COLORS, Card, role }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Verify & Close Work Order Modal */}
+      {verifyWO && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
+            background: "rgba(0,0,0,0.75)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setVerifyWO(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 540,
+              background: "#131C31",
+              border: "1.5px solid rgba(168, 85, 247, 0.4)",
+              borderRadius: 12,
+              padding: 24,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#C084FC" }}>
+                Supervisory Verification & Sign-Off
+              </div>
+              <button onClick={() => setVerifyWO(null)} style={{ background: "transparent", border: "none", color: "#94A3B8", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ padding: 12, borderRadius: 8, background: "#0B1120", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ fontWeight: 600 }}>Work Order #{verifyWO.id} — {verifyWO.title}</div>
+                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>
+                  Asset: <span style={{ color: "#06B6D4" }}>{verifyWO.asset_code || `Asset #${verifyWO.asset_id}`}</span> · Tech: <span>{verifyWO.assigned_to_name || "Field Technician"}</span>
+                </div>
+              </div>
+
+              {verifyWO.completion_report && (
+                <div style={{ padding: 12, borderRadius: 8, background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.25)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", textTransform: "uppercase", marginBottom: 4 }}>
+                    Technician Physical Completion Report
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "#E2E8F0", whiteSpace: "pre-wrap" }}>
+                    {typeof verifyWO.completion_report === "string"
+                      ? verifyWO.completion_report
+                      : (verifyWO.completion_report?.summary || verifyWO.completion_report?.action_taken || verifyWO.completion_report?.technician_notes || "Work completed and verified by technician.")}
+                  </div>
+                  {Array.isArray(verifyWO.completion_report?.findings) && verifyWO.completion_report.findings.length > 0 && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(16, 185, 129, 0.2)" }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#06B6D4", marginBottom: 4 }}>Recorded Findings & Readings:</div>
+                      {verifyWO.completion_report.findings.map((f, idx) => (
+                        <div key={idx} style={{ fontSize: 11.5, color: "#CBD5E1" }}>
+                          • {typeof f === "string" ? f : `${f.parameter || "Reading"}: ${f.value || f.finding || ""}`}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#94A3B8" }}>
+                Engineering Verification Notes & Safety Clearance *
+                <textarea
+                  rows={3}
+                  placeholder="Record verification inspection, test bench findings, and official closure approval..."
+                  value={verifyNotes}
+                  onChange={(e) => setVerifyNotes(e.target.value)}
+                  style={{ width: "100%", background: "#0B1120", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "8px 10px", color: "inherit", fontSize: 13, fontFamily: "inherit" }}
+                />
+              </label>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
+                <button type="button" onClick={() => setVerifyWO(null)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 14px", color: "#94A3B8", cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleVerifyAndClose(verifyWO.id)}
+                  disabled={verifying}
+                  style={{ background: "#8B5CF6", border: "none", borderRadius: 6, padding: "7px 18px", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+                >
+                  {verifying ? "Closing..." : "Verify & Officially Close"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -67,6 +67,8 @@ export default function InventoryPage({ COLORS, Card }) {
   const [rejectionReason, setRejectionReason] = useState("");
   const [savingReject, setSavingReject] = useState(false);
   const [approvingId, setApprovingId] = useState(null);
+  const [issuingId, setIssuingId] = useState(null);
+  const [adjustReason, setAdjustReason] = useState("");
 
   const notify = (type, message) => {
     setToast({ type, message });
@@ -108,7 +110,7 @@ export default function InventoryPage({ COLORS, Card }) {
     try {
       const res = await inventoryService.approveRequest(req.id);
       if (res.success) {
-        notify("success", `Approved requisition #${req.id} for ${req.quantity}x ${req.part_name}. Stock deducted.`);
+        notify("success", `Approved technical requisition #${req.id} for ${req.quantity}x ${req.part_name}. Ready for warehouse issuance.`);
         await load();
       } else {
         notify("error", res.message || "Failed to approve requisition.");
@@ -117,6 +119,23 @@ export default function InventoryPage({ COLORS, Card }) {
       notify("error", err?.response?.data?.message || "Error approving request.");
     } finally {
       setApprovingId(null);
+    }
+  };
+
+  const handleIssueRequest = async (req) => {
+    setIssuingId(req.id);
+    try {
+      const res = await inventoryService.issueRequest(req.id);
+      if (res.success) {
+        notify("success", `Physically issued ${req.quantity}x ${req.part_name} to Job #${req.work_order_id || "general"}. Depot stock deducted.`);
+        await load();
+      } else {
+        notify("error", res.message || "Failed to issue requisition.");
+      }
+    } catch (err) {
+      notify("error", err?.response?.data?.message || "Error issuing request.");
+    } finally {
+      setIssuingId(null);
     }
   };
 
@@ -152,6 +171,7 @@ export default function InventoryPage({ COLORS, Card }) {
     setAdjustType(type);
     setAdjustQty("");
     setAdjustLocation("Main Warehouse");
+    setAdjustReason("");
     setAdjustError(null);
   }
 
@@ -162,6 +182,10 @@ export default function InventoryPage({ COLORS, Card }) {
       setAdjustError("Please enter a valid positive quantity.");
       return;
     }
+    if (!adjustReason.trim()) {
+      setAdjustError("Mandatory reason is required for auditable inventory stock adjustments.");
+      return;
+    }
     setSavingAdjust(true);
     setAdjustError(null);
     try {
@@ -170,6 +194,7 @@ export default function InventoryPage({ COLORS, Card }) {
         location: adjustLocation || "Main Warehouse",
         quantityChange: adjustType === "USED" ? -qty : qty,
         transactionType: adjustType,
+        reason: adjustReason.trim(),
       });
 
       if (!res.success) {
@@ -184,6 +209,7 @@ export default function InventoryPage({ COLORS, Card }) {
       );
       setAdjustPart(null);
       setAdjustQty("");
+      setAdjustReason("");
       setAdjustError(null);
       await load();
     } catch (err) {
@@ -781,6 +807,8 @@ export default function InventoryPage({ COLORS, Card }) {
                     .map((req) => {
                       const isPending = req.status === "PENDING";
                       const isApproved = req.status === "APPROVED";
+                      const isIssued = req.status === "ISSUED";
+                      const isUsed = req.status === "USED";
                       const isRejected = req.status === "REJECTED";
                       const hasEnoughStock = (req.available_stock || 0) >= req.quantity;
 
@@ -850,36 +878,36 @@ export default function InventoryPage({ COLORS, Card }) {
                                 borderRadius: 20,
                                 fontSize: 11.5,
                                 fontWeight: 600,
-                                color: isApproved ? "#10B981" : isRejected ? "#EF4444" : "#F59E0B",
-                                background: isApproved ? "rgba(16,185,129,0.15)" : isRejected ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
+                                color: isIssued ? "#10B981" : isApproved ? "#3B82F6" : isUsed ? "#8B5CF6" : isRejected ? "#EF4444" : "#F59E0B",
+                                background: isIssued ? "rgba(16,185,129,0.15)" : isApproved ? "rgba(59,130,246,0.15)" : isUsed ? "rgba(139,92,246,0.15)" : isRejected ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)",
                               }}
                             >
-                              {isApproved ? "🟢 Approved & Issued" : isRejected ? "🔴 Rejected" : "🟡 Awaiting Approval"}
+                              {isIssued ? "🟢 Issued & Deducted" : isApproved ? "🔵 Approved (Awaiting Issue)" : isUsed ? "🟣 Consumed in Repair" : isRejected ? "🔴 Rejected" : "🟡 Awaiting Approval"}
                             </span>
                           </td>
                           <td style={{ padding: "12px 8px", textAlign: "right" }}>
                             {isPending && canManage ? (
                               <div style={{ display: "inline-flex", gap: 6 }}>
                                 <button
-                                  disabled={approvingId === req.id || !hasEnoughStock}
+                                  disabled={approvingId === req.id}
                                   onClick={() => handleApproveRequest(req)}
-                                  title={!hasEnoughStock ? "Insufficient warehouse stock to approve" : "Approve and deduct stock"}
+                                  title="Approve technical specifications without deducting warehouse stock"
                                   style={{
-                                    background: hasEnoughStock ? "rgba(16, 185, 129, 0.15)" : "rgba(100, 116, 139, 0.15)",
-                                    border: `1px solid ${hasEnoughStock ? "rgba(16, 185, 129, 0.35)" : "rgba(100, 116, 139, 0.3)"}`,
+                                    background: "rgba(59, 130, 246, 0.15)",
+                                    border: "1px solid rgba(59, 130, 246, 0.35)",
                                     borderRadius: 6,
                                     padding: "6px 12px",
-                                    color: hasEnoughStock ? "#10B981" : "#64748B",
+                                    color: "#3B82F6",
                                     fontSize: 12,
                                     fontWeight: 700,
-                                    cursor: hasEnoughStock ? "pointer" : "not-allowed",
+                                    cursor: "pointer",
                                     display: "inline-flex",
                                     alignItems: "center",
                                     gap: 4,
                                   }}
                                 >
                                   <CheckCircle2 size={13} />
-                                  {approvingId === req.id ? "Deducting..." : "Approve & Issue"}
+                                  {approvingId === req.id ? "Approving..." : "Approve Specs"}
                                 </button>
 
                                 <button
@@ -905,9 +933,31 @@ export default function InventoryPage({ COLORS, Card }) {
                                   Reject
                                 </button>
                               </div>
+                            ) : isApproved && canManage ? (
+                              <button
+                                disabled={issuingId === req.id || !hasEnoughStock}
+                                onClick={() => handleIssueRequest(req)}
+                                title={!hasEnoughStock ? "Insufficient warehouse stock to issue" : "Issue part from warehouse and deduct stock"}
+                                style={{
+                                  background: hasEnoughStock ? "rgba(16, 185, 129, 0.15)" : "rgba(100, 116, 139, 0.15)",
+                                  border: `1px solid ${hasEnoughStock ? "rgba(16, 185, 129, 0.35)" : "rgba(100, 116, 139, 0.3)"}`,
+                                  borderRadius: 6,
+                                  padding: "6px 12px",
+                                  color: hasEnoughStock ? "#10B981" : "#64748B",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: hasEnoughStock ? "pointer" : "not-allowed",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                }}
+                              >
+                                <Package size={13} />
+                                {issuingId === req.id ? "Issuing..." : "Issue from Depot"}
+                              </button>
                             ) : (
                               <span style={{ fontSize: 11.5, color: "#64748B" }}>
-                                {isApproved ? `Approved by ${req.reviewer_name || "Supervisor"}` : isRejected ? (req.rejection_reason || "Rejected") : "View Only"}
+                                {isIssued ? `Issued by ${req.issuer_name || "Depot"}` : isApproved ? `Approved by ${req.reviewer_name || "Engineer"}` : isRejected ? (req.rejection_reason || "Rejected") : "View Only"}
                               </span>
                             )}
                           </td>
@@ -1177,6 +1227,31 @@ export default function InventoryPage({ COLORS, Card }) {
                   }}
                   required
                   autoFocus
+                />
+              </div>
+
+              <div>
+                <label
+                  style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 4 }}
+                >
+                  Adjustment Reason & Audit Justification *
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Depot monthly audit correction, inbound consignment receipt #PO-882, damaged during transit..."
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  style={{
+                    width: "100%",
+                    background: "#0B1120",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 6,
+                    padding: "8px 10px",
+                    color: "inherit",
+                    fontSize: 13,
+                    resize: "vertical",
+                  }}
+                  required
                 />
               </div>
 

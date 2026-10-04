@@ -12,6 +12,8 @@ const {
   createPartRequest,
   approvePartRequest,
   rejectPartRequest,
+  issuePartRequest,
+  markPartUsed,
 } = require("../controllers/inventoryController");
 const { verifyToken } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/roles");
@@ -29,6 +31,8 @@ router.get("/transactions/:partId", requirePermission("inventory.view"), getTran
 router.get("/requests", requirePermission("inventory.view"), listPartRequests);
 router.post("/requests", createPartRequest);
 router.patch("/requests/:id/approve", requirePermission("inventory.manage"), approvePartRequest);
+router.patch("/requests/:id/issue", requirePermission("parts.issue"), issuePartRequest);
+router.patch("/requests/:id/used", markPartUsed);
 router.patch("/requests/:id/reject", requirePermission("inventory.manage"), rejectPartRequest);
 
 // Writes: Require inventory.manage

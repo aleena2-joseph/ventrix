@@ -52,7 +52,7 @@ const getStockForPart = async (req, res) => {
 const adjustStock = async (req, res) => {
   const client = await pool.connect();
   try {
-    const { partId, location, quantityChange, transactionType, referenceType, referenceId } = req.body;
+    const { partId, location, quantityChange, transactionType, referenceType, referenceId, reason } = req.body;
 
     if (!partId || !location || !quantityChange || !transactionType) {
       return res.status(400).json({
@@ -60,6 +60,8 @@ const adjustStock = async (req, res) => {
         message: "partId, location, quantityChange, and transactionType are required",
       });
     }
+
+    const auditReason = reason && String(reason).trim() ? String(reason).trim() : (transactionType === "RECEIVED" ? "Depot replenishment received" : "Physical count reconciliation");
 
     await client.query("BEGIN");
 
@@ -89,13 +91,34 @@ const adjustStock = async (req, res) => {
     }
 
     await client.query(
-      `INSERT INTO stock_transactions (part_id, inventory_id, transaction_type, quantity, reference_type, reference_id)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [partId, inventoryRow.id, transactionType, quantityChange, referenceType || "manual", referenceId || null]
+      `INSERT INTO stock_transactions (
+         part_id, inventory_id, transaction_type, quantity, reference_type, reference_id, user_id, reason
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        partId,
+        inventoryRow.id,
+        transactionType,
+        quantityChange,
+        referenceType || "manual",
+        referenceId || null,
+        req.user?.id || null,
+        auditReason,
+      ]
     );
 
     await client.query("COMMIT");
-    res.status(200).json({ success: true, message: "Stock updated", data: inventoryRow });
+
+    await auditModel.logAction({
+      userId: req.user.id,
+      organizationId: req.user.organizationId,
+      action: "STOCK_ADJUSTED",
+      entityType: "INVENTORY",
+      entityId: inventoryRow.id,
+      newData: { partId, location, quantityChange, transactionType, reason: auditReason },
+    });
+
+    res.status(200).json({ success: true, message: "Stock updated with audit trail", data: inventoryRow });
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("❌ Failed to adjust stock:", error.message);
@@ -222,8 +245,65 @@ const createPartRequest = async (req, res) => {
   }
 };
 
-// PATCH /api/inventory/requests/:id/approve — Admin / Engineer approves requisition & deducts stock
+// PATCH /api/inventory/requests/:id/approve — Engineer approves technical requirement (Authorization only, no stock deduction yet)
 const approvePartRequest = async (req, res) => {
+  try {
+    const requestId = Number(req.params.id);
+
+    const reqRes = await pool.query(
+      "SELECT * FROM part_requests WHERE id = $1",
+      [requestId]
+    );
+    const request = reqRes.rows[0];
+
+    if (!request) {
+      return res.status(404).json({ success: false, message: "Part request not found" });
+    }
+
+    if (request.status !== "PENDING") {
+      return res.status(400).json({
+        success: false,
+        message: `Request cannot be approved from current status: ${request.status}`,
+      });
+    }
+
+    const updatedRes = await pool.query(
+      `UPDATE part_requests
+       SET status = 'APPROVED',
+           reviewed_by = $1,
+           reviewed_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [req.user.id, requestId]
+    );
+
+    await auditModel.logAction({
+      userId: req.user.id,
+      organizationId: req.user.organizationId,
+      action: "SPARE_PART_REQUEST_APPROVED",
+      entityType: "PART_REQUEST",
+      entityId: requestId,
+      newData: {
+        part_id: request.part_id,
+        quantity: request.quantity,
+        status: "APPROVED",
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Technical requirement approved for ${request.quantity}x unit(s). Ready for warehouse physical issuance.`,
+      data: updatedRes.rows[0],
+    });
+  } catch (error) {
+    console.error("❌ Failed to approve part request:", error.message);
+    res.status(500).json({ success: false, message: error.message || "Failed to approve part request" });
+  }
+};
+
+// PATCH /api/inventory/requests/:id/issue — Warehouse / Admin physically issues part & deducts stock
+const issuePartRequest = async (req, res) => {
   const client = await pool.connect();
   try {
     const requestId = Number(req.params.id);
@@ -231,7 +311,6 @@ const approvePartRequest = async (req, res) => {
 
     await client.query("BEGIN");
 
-    // 1. Fetch pending request
     const reqRes = await client.query(
       "SELECT * FROM part_requests WHERE id = $1 FOR UPDATE",
       [requestId]
@@ -243,15 +322,15 @@ const approvePartRequest = async (req, res) => {
       return res.status(404).json({ success: false, message: "Part request not found" });
     }
 
-    if (request.status !== "PENDING") {
+    if (request.status !== "APPROVED" && request.status !== "PENDING") {
       await client.query("ROLLBACK");
       return res.status(400).json({
         success: false,
-        message: `Request is already ${request.status.toLowerCase()}`,
+        message: `Part request must be APPROVED before physical issuance. Current status: ${request.status}`,
       });
     }
 
-    // 2. Check and lock inventory stock
+    // Check inventory stock in location
     let invRes = await client.query(
       "SELECT * FROM inventory WHERE part_id = $1 AND location = $2 FOR UPDATE",
       [request.part_id, location]
@@ -273,42 +352,58 @@ const approvePartRequest = async (req, res) => {
         await client.query("ROLLBACK");
         return res.status(400).json({
           success: false,
-          message: `Insufficient inventory to approve request. Available: ${available}, requested: ${request.quantity}`,
+          message: `Insufficient inventory in warehouse. Available: ${available}, requested: ${request.quantity}`,
         });
       }
       invRow = altRes.rows[0];
     }
 
-    // 3. Deduct stock from inventory
+    // Deduct stock from inventory
     await client.query(
       "UPDATE inventory SET quantity = quantity - $1, updated_at = NOW() WHERE id = $2",
       [request.quantity, invRow.id]
     );
 
-    // 4. Record stock transaction
+    // Record auditable stock transaction
     await client.query(
       `INSERT INTO stock_transactions (
-         part_id, inventory_id, transaction_type, quantity, reference_type, reference_id
+         part_id, inventory_id, transaction_type, quantity, reference_type, reference_id, user_id, reason
        )
-       VALUES ($1, $2, 'USED', $3, 'part_request', $4)`,
-      [request.part_id, invRow.id, -request.quantity, request.id]
+       VALUES ($1, $2, 'PART_ISSUE', $3, 'part_request', $4, $5, $6)`,
+      [
+        request.part_id,
+        invRow.id,
+        -request.quantity,
+        request.id,
+        req.user.id,
+        `Physical parts issued to Work Order #${request.work_order_id || 'Depot'}`,
+      ]
     );
 
-    // 5. If linked to a work order, attach to work_order_parts
+    // Attach to work_order_parts if linked
     if (request.work_order_id) {
       await client.query(
         `INSERT INTO work_order_parts (work_order_id, part_id, quantity)
-         VALUES ($1, $2, $3)`,
+         VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING`,
         [request.work_order_id, request.part_id, request.quantity]
+      );
+
+      // Transition work order from WAITING_FOR_PARTS to PARTS_ISSUED
+      await client.query(
+        `UPDATE work_orders
+         SET status = 'PARTS_ISSUED', updated_at = NOW()
+         WHERE id = $1 AND status = 'WAITING_FOR_PARTS'`,
+        [request.work_order_id]
       );
     }
 
-    // 6. Update request status to APPROVED
+    // Update request status to ISSUED
     const updatedRes = await client.query(
       `UPDATE part_requests
-       SET status = 'APPROVED',
-           reviewed_by = $1,
-           reviewed_at = NOW(),
+       SET status = 'ISSUED',
+           issued_by = $1,
+           issued_at = NOW(),
            updated_at = NOW()
        WHERE id = $2
        RETURNING *`,
@@ -320,27 +415,61 @@ const approvePartRequest = async (req, res) => {
     await auditModel.logAction({
       userId: req.user.id,
       organizationId: req.user.organizationId,
-      action: "SPARE_PART_REQUEST_APPROVED",
+      action: "SPARE_PART_PHYSICALLY_ISSUED",
       entityType: "PART_REQUEST",
       entityId: requestId,
       newData: {
         part_id: request.part_id,
         quantity: request.quantity,
-        deducted_location: invRow.location,
+        location: invRow.location,
+        work_order_id: request.work_order_id,
       },
     });
 
     res.status(200).json({
       success: true,
-      message: `Request approved. Deducted ${request.quantity} units from ${invRow.location}.`,
+      message: `Parts physically issued from ${invRow.location} and deducted from inventory. Ready for technician installation.`,
       data: updatedRes.rows[0],
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("❌ Failed to approve part request:", error.message);
-    res.status(500).json({ success: false, message: error.message || "Failed to approve part request" });
+    console.error("❌ Failed to issue part request:", error.message);
+    res.status(500).json({ success: false, message: error.message || "Failed to issue part request" });
   } finally {
     client.release();
+  }
+};
+
+// PATCH /api/inventory/requests/:id/used — Technician marks part as installed/used in work order
+const markPartUsed = async (req, res) => {
+  try {
+    const requestId = Number(req.params.id);
+
+    const result = await pool.query(
+      `UPDATE part_requests
+       SET status = 'USED',
+           used_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1 AND status IN ('ISSUED', 'APPROVED')
+       RETURNING *`,
+      [requestId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Part request must be in ISSUED status to be marked as used",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Spare part recorded as installed and consumed in repair.",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error("❌ Failed to mark part as used:", error.message);
+    res.status(500).json({ success: false, message: error.message || "Failed to mark part as used" });
   }
 };
 
@@ -357,7 +486,7 @@ const rejectPartRequest = async (req, res) => {
            reviewed_by = $2,
            reviewed_at = NOW(),
            updated_at = NOW()
-       WHERE id = $3 AND status = 'PENDING'
+       WHERE id = $3 AND status IN ('PENDING', 'APPROVED')
        RETURNING *`,
       [rejection_reason || "Requisition rejected by supervisor", req.user.id, requestId]
     );
@@ -399,5 +528,7 @@ module.exports = {
   listPartRequests,
   createPartRequest,
   approvePartRequest,
+  issuePartRequest,
+  markPartUsed,
   rejectPartRequest,
 };

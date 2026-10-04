@@ -10,9 +10,13 @@ const getAlerts = async (req, res) => {
     const resolvedFilter = req.query.resolved === undefined ? null : req.query.resolved === "true";
 
     const result = await pool.query(
-      `SELECT al.*, a.asset_code, a.name AS asset_name
+      `SELECT al.*, a.asset_code, a.name AS asset_name,
+              u_ack.name AS acknowledged_by_username,
+              wo.id AS work_order_number
        FROM alerts al
        JOIN assets a ON al.asset_id = a.id
+       LEFT JOIN users u_ack ON al.acknowledged_by = u_ack.id
+       LEFT JOIN work_orders wo ON al.work_order_id = wo.id
        LEFT JOIN coaches c ON a.coach_id = c.id
        LEFT JOIN trains t ON c.train_id = t.id
        LEFT JOIN projects pj ON t.project_id = pj.id
@@ -48,6 +52,38 @@ const createAlert = async (req, res) => {
   }
 };
 
+// PATCH /api/alerts/:id/acknowledge
+const acknowledgeAlert = async (req, res) => {
+  try {
+    const { note } = req.body || {};
+    const result = await pool.query(
+      `UPDATE alerts 
+       SET is_acknowledged = TRUE, acknowledged_at = NOW(), acknowledged_by = $1
+       WHERE id = $2 RETURNING *`,
+      [req.user.id, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Alert not found" });
+    }
+
+    const alert = result.rows[0];
+
+    await auditModel.logAction({
+      userId: req.user.id,
+      organizationId: req.user.organizationId,
+      action: "ALERT_ACKNOWLEDGED",
+      entityType: "ALERT",
+      entityId: alert.id,
+      newData: { ...alert, note },
+    });
+
+    res.status(200).json({ success: true, message: "Alert acknowledged", data: alert });
+  } catch (error) {
+    console.error("❌ Failed to acknowledge alert:", error.message);
+    res.status(500).json({ success: false, message: "Failed to acknowledge alert" });
+  }
+};
+
 // PATCH /api/alerts/:id/resolve
 const resolveAlert = async (req, res) => {
   try {
@@ -77,4 +113,4 @@ const resolveAlert = async (req, res) => {
   }
 };
 
-module.exports = { getAlerts, createAlert, resolveAlert };
+module.exports = { getAlerts, createAlert, acknowledgeAlert, resolveAlert };

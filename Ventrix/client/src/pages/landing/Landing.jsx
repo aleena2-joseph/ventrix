@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   Activity,
   Shield,
@@ -19,7 +19,6 @@ import {
   Users,
   Play,
   RotateCcw,
-  Check,
   Flame,
   Thermometer,
   Gauge,
@@ -38,21 +37,16 @@ import {
   Sun,
   Moon,
 } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import ThemeToggle from '../../components/layout/ThemeToggle';
 
 export default function Landing() {
-  const navigate = useNavigate();
-  const { login } = useAuth();
   const { isDark } = useTheme();
 
   // Navigation & Interactive state
   const [activeTab, setActiveTab] = useState('overview');
   const [activeWorkflowStep, setActiveWorkflowStep] = useState(0);
   const [isPlayingWorkflow, setIsPlayingWorkflow] = useState(true);
-  const [activeRoleView, setActiveRoleView] = useState('admin');
-  const [quickLoginLoading, setQuickLoginLoading] = useState(null);
 
   // Live telemetry ticker
   const [telemetryTick, setTelemetryTick] = useState({
@@ -94,21 +88,6 @@ export default function Landing() {
     return () => clearInterval(interval);
   }, [isPlayingWorkflow]);
 
-  const handleQuickLogin = async (email, roleKey) => {
-    setQuickLoginLoading(roleKey);
-    try {
-      const ok = await login(email, 'Ventrix@123');
-      if (ok) {
-        navigate('/dashboard', { replace: true });
-      } else {
-        navigate('/login');
-      }
-    } catch {
-      navigate('/login');
-    } finally {
-      setQuickLoginLoading(null);
-    }
-  };
 
   // Color tokens tailored for both dark and light modes
   const themeStyles = {
@@ -329,14 +308,6 @@ export default function Landing() {
             onMouseLeave={(e) => (e.currentTarget.style.color = themeStyles.textMuted)}
           >
             Workflow
-          </a>
-          <a
-            href="#roles"
-            style={{ color: themeStyles.textMuted, textDecoration: 'none', transition: 'color 0.15s' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#06B6D4')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = themeStyles.textMuted)}
-          >
-            Role Access
           </a>
         </nav>
 
@@ -1200,179 +1171,6 @@ export default function Landing() {
         })()}
       </section>
 
-      {/* ─────────────────────────────────────────────────────────────
-          6. ROLE SECTION — THE 3 USERS
-          ───────────────────────────────────────────────────────────── */}
-      <section
-        id="roles"
-        style={{
-          padding: '80px 24px',
-          maxWidth: 1240,
-          margin: '0 auto',
-          borderTop: `1px solid ${themeStyles.cardBorder}`,
-        }}
-      >
-        <div style={{ textAlign: 'center', marginBottom: 44 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: themeStyles.primary, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Tailored Access Control
-          </div>
-          <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: 800, margin: '0 0 14px', color: themeStyles.textColor }}>
-            Built for everyone running your depot.
-          </h2>
-          <p style={{ color: themeStyles.textMuted, fontSize: 16, maxWidth: 640, margin: '0 auto' }}>
-            One platform that provides tailored workflows for administrators, engineers, and field technicians.
-          </p>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
-          {/* Admin Role */}
-          <div
-            style={{
-              padding: 28,
-              borderRadius: 16,
-              background: themeStyles.cardBg,
-              border: activeRoleView === 'admin' ? `1.5px solid ${themeStyles.primary}` : `1px solid ${themeStyles.cardBorder}`,
-              boxShadow: themeStyles.cardShadow,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-            }}
-          >
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <span style={{ padding: '3px 9px', borderRadius: 4, background: isDark ? 'rgba(6,182,212,0.15)' : 'rgba(2,132,199,0.1)', color: themeStyles.primary, fontSize: 11, fontWeight: 800 }}>
-                  ROLE: ADMIN
-                </span>
-                <span style={{ fontSize: 12, color: themeStyles.textMuted }}>admin@ventrix.com</span>
-              </div>
-              <h3 style={{ fontSize: 19, fontWeight: 700, margin: '0 0 10px', color: themeStyles.textColor }}>Ventrix Administrator</h3>
-              <p style={{ fontSize: 13.5, color: themeStyles.textMuted, lineHeight: 1.5, margin: '0 0 16px' }}>
-                Full system control: User management, asset approvals, role permissions, work order closure, and global telemetry oversight.
-              </p>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', fontSize: 12.5, color: themeStyles.textColor, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#06B6D4" /> User Management & RBAC</li>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#06B6D4" /> Work Order Sign-off</li>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#06B6D4" /> Fleet-wide Asset Registry</li>
-              </ul>
-            </div>
-            <button
-              onClick={() => handleQuickLogin('admin@ventrix.com', 'admin')}
-              disabled={quickLoginLoading === 'admin'}
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: 8,
-                border: 'none',
-                background: 'linear-gradient(135deg, #0284C7 0%, #06B6D4 100%)',
-                color: '#FFFFFF',
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              {quickLoginLoading === 'admin' ? 'Launching...' : 'Demo Login as Admin →'}
-            </button>
-          </div>
-
-          {/* Engineer Role */}
-          <div
-            style={{
-              padding: 28,
-              borderRadius: 16,
-              background: themeStyles.cardBg,
-              border: activeRoleView === 'engineer' ? '1.5px solid #3B82F6' : `1px solid ${themeStyles.cardBorder}`,
-              boxShadow: themeStyles.cardShadow,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-            }}
-          >
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <span style={{ padding: '3px 9px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#3B82F6', fontSize: 11, fontWeight: 800 }}>
-                  ROLE: ENGINEER
-                </span>
-                <span style={{ fontSize: 12, color: themeStyles.textMuted }}>engineer@ventrix.com</span>
-              </div>
-              <h3 style={{ fontSize: 19, fontWeight: 700, margin: '0 0 10px', color: themeStyles.textColor }}>Diagnostic Engineer</h3>
-              <p style={{ fontSize: 13.5, color: themeStyles.textMuted, lineHeight: 1.5, margin: '0 0 16px' }}>
-                Operational & technical control: Live telemetry analysis, degradation diagnostics, maintenance planning, and spare parts catalog.
-              </p>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', fontSize: 12.5, color: themeStyles.textColor, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#3B82F6" /> Sensor Telemetry History</li>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#3B82F6" /> Maintenance Planning</li>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#3B82F6" /> Inventory & Part Catalog</li>
-              </ul>
-            </div>
-            <button
-              onClick={() => handleQuickLogin('engineer@ventrix.com', 'engineer')}
-              disabled={quickLoginLoading === 'engineer'}
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: 8,
-                border: 'none',
-                background: '#3B82F6',
-                color: '#fff',
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              {quickLoginLoading === 'engineer' ? 'Launching...' : 'Demo Login as Engineer →'}
-            </button>
-          </div>
-
-          {/* Technician Role */}
-          <div
-            style={{
-              padding: 28,
-              borderRadius: 16,
-              background: themeStyles.cardBg,
-              border: activeRoleView === 'technician' ? '1.5px solid #10B981' : `1px solid ${themeStyles.cardBorder}`,
-              boxShadow: themeStyles.cardShadow,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-            }}
-          >
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <span style={{ padding: '3px 9px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#10B981', fontSize: 11, fontWeight: 800 }}>
-                  ROLE: TECHNICIAN
-                </span>
-                <span style={{ fontSize: 12, color: themeStyles.textMuted }}>tech@ventrix.com</span>
-              </div>
-              <h3 style={{ fontSize: 19, fontWeight: 700, margin: '0 0 10px', color: themeStyles.textColor }}>Field Technician</h3>
-              <p style={{ fontSize: 13.5, color: themeStyles.textMuted, lineHeight: 1.5, margin: '0 0 16px' }}>
-                Field execution: Accepting assigned work orders, logging maintenance progress, recording parts consumed, and service tickets.
-              </p>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', fontSize: 12.5, color: themeStyles.textColor, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#10B981" /> Assigned Work Orders</li>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#10B981" /> Log Maintenance & Parts</li>
-                <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Check size={14} color="#10B981" /> Create Service Tickets</li>
-              </ul>
-            </div>
-            <button
-              onClick={() => handleQuickLogin('tech@ventrix.com', 'tech')}
-              disabled={quickLoginLoading === 'tech'}
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: 8,
-                border: 'none',
-                background: '#10B981',
-                color: '#000',
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              {quickLoginLoading === 'tech' ? 'Launching...' : 'Demo Login as Technician →'}
-            </button>
-          </div>
-        </div>
-      </section>
 
       {/* ─────────────────────────────────────────────────────────────
           7. FINAL CTA BANNER

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Plus, Search, X, Pencil, Box, Calendar, ShieldCheck,
   MapPin, Settings2, Activity as ActivityIcon, Archive,
+  Trash2, CheckCircle2, AlertTriangle, Shield,
 } from "lucide-react";
 import {
   getAssets,
@@ -10,6 +11,7 @@ import {
   decommissionAsset,
 } from "../../../services/assetService";
 import { getTelemetryHistory } from "../../../services/telemetryService";
+import { getLocations, createLocation, deleteLocation } from "../../../services/locationService";
 
 const STATUS_OPTIONS = ["OPERATIONAL", "WARNING", "MAINTENANCE", "OFFLINE", "DECOMMISSIONED"];
 
@@ -34,17 +36,22 @@ const EMPTY_FORM = {
   status: "OPERATIONAL",
 };
 
-/**
- * Full Asset Management page — real data, backed by GET/POST/PUT
- * /api/assets and PATCH /api/assets/:code/status. This replaces the
- * old telemetry-derived placeholder list.
- */
-export default function AssetManagement({ COLORS, Card }) {
+export default function AssetManagement({ COLORS, Card, user, role }) {
+  const currentUser = user || (() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "{}");
+    } catch {
+      return {};
+    }
+  })();
+  const userRole = (role || currentUser?.role_name || currentUser?.role || "").toUpperCase();
+  const isAdmin = userRole === "ADMIN" || userRole === "VENTRIX_ADMIN" || userRole === "SUPER_ADMIN";
+
   const [assets, setAssets] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [coachOptions, setCoachOptions] = useState([]); // flattened, labeled with train number
+  const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [toast, setToast] = useState(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -57,6 +64,15 @@ export default function AssetManagement({ COLORS, Card }) {
   const [saving, setSaving] = useState(false);
 
   const [selectedCode, setSelectedCode] = useState(null);
+
+  // Admin Location Modals
+  const [showAddLocationModal, setShowAddLocationModal] = useState(false);
+  const [showLocationManager, setShowLocationManager] = useState(false);
+
+  const notify = (type, message) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   async function load() {
     try {
@@ -74,10 +90,21 @@ export default function AssetManagement({ COLORS, Card }) {
     }
   }
 
+  async function loadLocationsList() {
+    try {
+      const res = await getLocations();
+      if (res?.success && Array.isArray(res.data)) {
+        setLocations(res.data);
+      }
+    } catch (err) {
+      console.error("Failed to load locations:", err);
+    }
+  }
+
   useEffect(() => {
     load();
+    loadLocationsList();
     const timer = setInterval(() => {
-      // Background silent refresh without re-triggering full loading spinner
       getAssets()
         .then((res) => {
           if (res.success && Array.isArray(res.data)) {
@@ -85,7 +112,7 @@ export default function AssetManagement({ COLORS, Card }) {
           }
         })
         .catch(() => {});
-    }, 3000);
+    }, 4000);
     return () => clearInterval(timer);
   }, []);
 
@@ -155,6 +182,7 @@ export default function AssetManagement({ COLORS, Card }) {
     try {
       await decommissionAsset(assetCode);
       setSelectedCode(null);
+      notify("success", `Asset ${assetCode} marked as Decommissioned.`);
       await load();
     } catch (err) {
       setError(err?.response?.data?.message || err.message || "Failed to decommission asset.");
@@ -191,6 +219,7 @@ export default function AssetManagement({ COLORS, Card }) {
         return;
       }
       setShowForm(false);
+      notify("success", editingCode ? `Asset ${editingCode} updated successfully.` : `Asset ${payload.asset_code} created successfully.`);
       await load();
     } catch (err) {
       setFormError(err?.response?.data?.message || err.message || "Could not reach the backend.");
@@ -203,6 +232,30 @@ export default function AssetManagement({ COLORS, Card }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 110,
+            background: toast.type === "success" ? "#064E3B" : "#7F1D1D",
+            border: `1px solid ${toast.type === "success" ? "#10B981" : "#EF4444"}`,
+            color: "#fff",
+            padding: "12px 18px",
+            borderRadius: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+          }}
+        >
+          {toast.type === "success" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+          <span style={{ fontSize: 13.5, fontWeight: 500 }}>{toast.message}</span>
+        </div>
+      )}
+
       {error && (
         <Banner COLORS={COLORS} tone="danger">
           {error}
@@ -210,13 +263,13 @@ export default function AssetManagement({ COLORS, Card }) {
       )}
       {!error && loading && (
         <Banner COLORS={COLORS} tone="primary">
-          Loading assets…
+          Loading HVAC assets…
         </Banner>
       )}
 
       {/* Stat strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12 }}>
-        <MiniStat COLORS={COLORS} label="Total HVAC" value={counts.TOTAL} color={COLORS.primary} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
+        <MiniStat COLORS={COLORS} label="Total Registered" value={counts.TOTAL} color={COLORS.primary} />
         {STATUS_OPTIONS.map((s) => (
           <MiniStat
             key={s}
@@ -240,7 +293,7 @@ export default function AssetManagement({ COLORS, Card }) {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by code, name, model, location…"
+            placeholder="Search by code, coach, depot location…"
             style={{
               background: "transparent", border: "none", outline: "none", color: COLORS.white,
               fontSize: 13, width: "100%", fontFamily: "'Inter', sans-serif",
@@ -249,45 +302,34 @@ export default function AssetManagement({ COLORS, Card }) {
         </div>
 
         <SelectPill COLORS={COLORS} value={statusFilter} onChange={setStatusFilter}>
-          <option value="ALL">All statuses</option>
+          <option value="ALL">All Statuses</option>
           {STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </SelectPill>
 
         <SelectPill COLORS={COLORS} value={trainFilter} onChange={setTrainFilter}>
-          <option value="ALL">All trains</option>
+          <option value="ALL">All Trains</option>
           {trains.map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
         </SelectPill>
 
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 12px",
-            borderRadius: 8,
-            background: "rgba(16, 185, 129, 0.1)",
-            border: "1px solid rgba(16, 185, 129, 0.25)",
-            color: "#10B981",
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
-          <span
+        {/* Location Manager Button for Admins */}
+        {isAdmin && (
+          <button
+            onClick={() => setShowLocationManager(true)}
             style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "#10B981",
-              boxShadow: "0 0 8px #10B981",
-              display: "inline-block",
+              display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10,
+              border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.05)",
+              color: COLORS.white, cursor: "pointer", fontSize: 13, fontWeight: 500,
             }}
-          />
-          Live Simulation Sync
-        </div>
+            title="Manage railway depots, yards, and coach locations (Admin only)"
+          >
+            <MapPin size={15} color={COLORS.primary} />
+            Depots & Locations
+          </button>
+        )}
 
         <button
           onClick={openCreate}
@@ -307,12 +349,12 @@ export default function AssetManagement({ COLORS, Card }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
             <thead>
               <tr style={{ textAlign: "left", color: COLORS.muted, fontSize: 12 }}>
-                <th style={{ padding: "8px 4px", fontWeight: 500 }}>Asset</th>
-                <th style={{ padding: "8px 4px", fontWeight: 500 }}>Train / Coach</th>
-                <th style={{ padding: "8px 4px", fontWeight: 500 }}>Model</th>
-                <th style={{ padding: "8px 4px", fontWeight: 500 }}>Location</th>
-                <th style={{ padding: "8px 4px", fontWeight: 500 }}>Status</th>
-                <th style={{ padding: "8px 4px", fontWeight: 500 }}></th>
+                <th style={{ padding: "10px 8px", fontWeight: 500 }}>Asset Code</th>
+                <th style={{ padding: "10px 8px", fontWeight: 500 }}>Train / Coach</th>
+                <th style={{ padding: "10px 8px", fontWeight: 500 }}>Model / Spec</th>
+                <th style={{ padding: "10px 8px", fontWeight: 500 }}>Depot Location</th>
+                <th style={{ padding: "10px 8px", fontWeight: 500 }}>Operational State</th>
+                <th style={{ padding: "10px 8px", fontWeight: 500, textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -322,27 +364,32 @@ export default function AssetManagement({ COLORS, Card }) {
                   style={{ borderTop: `1px solid ${COLORS.border}`, cursor: "pointer" }}
                   onClick={() => setSelectedCode(a.asset_code)}
                 >
-                  <td style={{ padding: "12px 4px" }}>
+                  <td style={{ padding: "12px 8px" }}>
                     <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{a.asset_code}</div>
                     <div style={{ fontSize: 12, color: COLORS.muted }}>{a.name}</div>
                   </td>
-                  <td style={{ padding: "12px 4px" }}>
+                  <td style={{ padding: "12px 8px" }}>
                     {a.train_number || "—"} {a.coach_number ? `/ ${a.coach_number}` : ""}
                   </td>
-                  <td style={{ padding: "12px 4px" }}>{a.product_name || "—"}</td>
-                  <td style={{ padding: "12px 4px" }}>{a.zone || "—"}</td>
-                  <td style={{ padding: "12px 4px" }}>
+                  <td style={{ padding: "12px 8px" }}>{a.product_name || a.asset_type || "Roof-Mounted Unit"}</td>
+                  <td style={{ padding: "12px 8px" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      <MapPin size={13} color={COLORS.primary} />
+                      {a.zone || "—"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 8px" }}>
                     <StatusBadge value={a.status} />
                   </td>
-                  <td style={{ padding: "12px 4px", textAlign: "right" }}>
+                  <td style={{ padding: "12px 8px", textAlign: "right" }}>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         openEdit(a);
                       }}
                       style={{
-                        background: "transparent", border: "none", color: COLORS.muted, cursor: "pointer",
-                        display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12,
+                        background: "transparent", border: "none", color: COLORS.primary, cursor: "pointer",
+                        display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5, fontWeight: 600,
                       }}
                     >
                       <Pencil size={13} /> Edit
@@ -352,8 +399,8 @@ export default function AssetManagement({ COLORS, Card }) {
               ))}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: "24px 4px", textAlign: "center", color: COLORS.muted }}>
-                    No assets match your filters.
+                  <td colSpan={6} style={{ padding: "28px 8px", textAlign: "center", color: COLORS.muted }}>
+                    No HVAC assets found matching your criteria.
                   </td>
                 </tr>
               )}
@@ -362,6 +409,7 @@ export default function AssetManagement({ COLORS, Card }) {
         </div>
       </Card>
 
+      {/* Add / Edit Asset Modal */}
       {showForm && (
         <AssetFormModal
           COLORS={COLORS}
@@ -372,11 +420,13 @@ export default function AssetManagement({ COLORS, Card }) {
           error={formError}
           saving={saving}
           isEditing={!!editingCode}
-          products={products}
-          coachOptions={coachOptions}
+          locations={locations}
+          isAdmin={isAdmin}
+          onOpenAddLocation={() => setShowAddLocationModal(true)}
         />
       )}
 
+      {/* Asset Details Drawer */}
       {selected && (
         <AssetDetailsDrawer
           COLORS={COLORS}
@@ -389,12 +439,38 @@ export default function AssetManagement({ COLORS, Card }) {
           onDecommission={() => handleDecommission(selected.asset_code)}
         />
       )}
+
+      {/* Add Location Modal (Admin Only) */}
+      {showAddLocationModal && (
+        <AddLocationModal
+          COLORS={COLORS}
+          onClose={() => setShowAddLocationModal(false)}
+          onSuccess={(newLoc) => {
+            loadLocationsList();
+            setForm((f) => ({ ...f, zone: newLoc.name }));
+            setShowAddLocationModal(false);
+            notify("success", `Location "${newLoc.name}" added successfully.`);
+          }}
+        />
+      )}
+
+      {/* Location Manager Modal (Admin Only) */}
+      {showLocationManager && (
+        <LocationManagerModal
+          COLORS={COLORS}
+          locations={locations}
+          onClose={() => setShowLocationManager(false)}
+          onRefresh={loadLocationsList}
+          onOpenAdd={() => setShowAddLocationModal(true)}
+          notify={notify}
+        />
+      )}
     </div>
   );
 }
 
 function Banner({ COLORS, tone, children }) {
-  const color = COLORS[tone] || COLORS.primary;
+  const color = tone === "danger" ? "#EF4444" : COLORS.primary;
   return (
     <div
       style={{
@@ -440,7 +516,6 @@ function StatusBadge({ value }) {
   const s = STATUS_COLOR[value] || STATUS_COLOR.OPERATIONAL;
   return (
     <div
-      title="Automated status from live telemetry simulation"
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -485,7 +560,19 @@ function textInputStyle(COLORS) {
   };
 }
 
-function AssetFormModal({ COLORS, form, setForm, onSubmit, onClose, error, saving, isEditing, products, coachOptions }) {
+function AssetFormModal({
+  COLORS,
+  form,
+  setForm,
+  onSubmit,
+  onClose,
+  error,
+  saving,
+  isEditing,
+  locations = [],
+  isAdmin,
+  onOpenAddLocation,
+}) {
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   return (
@@ -500,7 +587,7 @@ function AssetFormModal({ COLORS, form, setForm, onSubmit, onClose, error, savin
         onClick={(e) => e.stopPropagation()}
         style={{
           background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16,
-          padding: 28, width: 560, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto",
+          padding: 28, width: 580, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -528,21 +615,67 @@ function AssetFormModal({ COLORS, form, setForm, onSubmit, onClose, error, savin
             <input value={form.name} onChange={set("name")} placeholder="Coach D2 HVAC Unit" style={textInputStyle(COLORS)} />
           </FormField>
           <FormField COLORS={COLORS} label="Model / Type">
-            <input value={form.asset_type} onChange={set("asset_type")} placeholder="e.g. Roof-Mounted HVAC Unit" style={textInputStyle(COLORS)} />
+            <input value={form.asset_type} onChange={set("asset_type")} placeholder="Roof-Mounted HVAC Unit" style={textInputStyle(COLORS)} />
           </FormField>
           <FormField COLORS={COLORS} label="Serial Number">
             <input value={form.serial_number} onChange={set("serial_number")} placeholder="VT500-007" style={textInputStyle(COLORS)} />
           </FormField>
-          <FormField COLORS={COLORS} label="Location">
-            <input value={form.zone} onChange={set("zone")} placeholder="Coach D2" style={textInputStyle(COLORS)} />
-          </FormField>
+
+          {/* Location Dropdown with Admin-Only Addition */}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <FormField
+              COLORS={COLORS}
+              label={
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                  <span>Location / Depot *</span>
+                  {isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={onOpenAddLocation}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: COLORS.primary,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: 0,
+                      }}
+                    >
+                      <Plus size={13} /> Add Location (Admin Only)
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 11, color: COLORS.muted }}>(Managed by Admin)</span>
+                  )}
+                </div>
+              }
+            >
+              <select
+                value={form.zone || ""}
+                onChange={set("zone")}
+                style={{ ...textInputStyle(COLORS), cursor: "pointer", width: "100%" }}
+                required
+              >
+                <option value="">-- Choose Railway Location / Depot --</option>
+                {locations.map((loc) => (
+                  <option key={loc.id || loc.name} value={loc.name}>
+                    {loc.name} {loc.code ? `[${loc.code}]` : ""} ({loc.type || "DEPOT"})
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </div>
+
           <FormField COLORS={COLORS} label="Installation Date">
             <input type="date" value={form.install_date} onChange={set("install_date")} style={textInputStyle(COLORS)} />
           </FormField>
           <FormField COLORS={COLORS} label="Warranty End">
             <input type="date" value={form.warranty_end} onChange={set("warranty_end")} style={textInputStyle(COLORS)} />
           </FormField>
-          <FormField COLORS={COLORS} label="Live Operational Status">
+          <FormField COLORS={COLORS} label="Operational Status">
             <div
               style={{
                 ...textInputStyle(COLORS),
@@ -567,7 +700,7 @@ function AssetFormModal({ COLORS, form, setForm, onSubmit, onClose, error, savin
                 <strong style={{ color: (STATUS_COLOR[form.status] || STATUS_COLOR.OPERATIONAL).c }}>
                   {form.status || "OPERATIONAL"}
                 </strong>{" "}
-                <span style={{ fontSize: 11, color: COLORS.muted }}>(Automated via Live Telemetry)</span>
+                <span style={{ fontSize: 11, color: COLORS.muted }}>(Live Sensor Sync)</span>
               </span>
             </div>
           </FormField>
@@ -595,6 +728,291 @@ function AssetFormModal({ COLORS, form, setForm, onSubmit, onClose, error, savin
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Modal for Admin to create a new railway location
+function AddLocationModal({ COLORS, onClose, onSuccess }) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [type, setType] = useState("DEPOT");
+  const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setErr("Location Name is required.");
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    try {
+      const res = await createLocation({
+        name: name.trim(),
+        code: code.trim() || null,
+        type,
+        description: description.trim() || null,
+      });
+      if (res?.success) {
+        onSuccess(res.data);
+      } else {
+        setErr(res?.message || "Failed to create location.");
+      }
+    } catch (e) {
+      setErr(e?.response?.data?.message || e.message || "Failed to create location.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(3,7,18,0.75)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16,
+          padding: 24, width: 460, maxWidth: "100%",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <MapPin size={18} color={COLORS.primary} />
+            <span style={{ fontWeight: 600, fontSize: 16 }}>Add Railway Location (Admin Only)</span>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: COLORS.muted, cursor: "pointer" }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {err && <div style={{ marginBottom: 14 }}><Banner COLORS={COLORS} tone="danger">{err}</Banner></div>}
+
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <FormField COLORS={COLORS} label="Location / Depot Name *">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Coach D3 or Howrah Maintenance Shed"
+              style={textInputStyle(COLORS)}
+              required
+            />
+          </FormField>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <FormField COLORS={COLORS} label="Code (Optional)">
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="e.g. LOC-D3 or DEPOT-HWH"
+                style={textInputStyle(COLORS)}
+              />
+            </FormField>
+
+            <FormField COLORS={COLORS} label="Location Type">
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                style={{ ...textInputStyle(COLORS), cursor: "pointer" }}
+              >
+                <option value="COACH">Coach</option>
+                <option value="DEPOT">Depot</option>
+                <option value="WORKSHOP">Workshop / Shed</option>
+                <option value="YARD">Coaching Yard</option>
+                <option value="STATION">Station</option>
+              </select>
+            </FormField>
+          </div>
+
+          <FormField COLORS={COLORS} label="Description (Optional)">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. Northern Railway Carriage & Wagon Workshop"
+              rows={2}
+              style={{ ...textInputStyle(COLORS), resize: "vertical" }}
+            />
+          </FormField>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: "8px 16px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                background: "transparent", color: COLORS.muted, cursor: "pointer", fontSize: 13,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{
+                padding: "8px 18px", borderRadius: 8, border: "none", background: COLORS.primary,
+                color: "#00131A", fontWeight: 600, cursor: "pointer", fontSize: 13, opacity: submitting ? 0.6 : 1,
+              }}
+            >
+              {submitting ? "Adding..." : "Add Location"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Modal for Admin to manage all locations
+function LocationManagerModal({ COLORS, locations, onClose, onRefresh, onOpenAdd, notify }) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+
+  const filteredLocs = locations.filter((loc) => {
+    const q = searchTerm.toLowerCase();
+    return (
+      loc.name?.toLowerCase().includes(q) ||
+      loc.code?.toLowerCase().includes(q) ||
+      loc.type?.toLowerCase().includes(q)
+    );
+  });
+
+  const handleDelete = async (id, name) => {
+    if (!window.confirm(`Delete location "${name}"? Assets stationed here will keep their recorded zone.`)) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      const res = await deleteLocation(id);
+      if (res?.success) {
+        notify("success", `Location "${name}" removed.`);
+        onRefresh();
+      } else {
+        notify("error", res?.message || "Failed to remove location.");
+      }
+    } catch (err) {
+      notify("error", err?.response?.data?.message || err.message || "Failed to delete location.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(3,7,18,0.75)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 55, padding: 20,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16,
+          padding: 24, width: 620, maxWidth: "100%", maxHeight: "80vh", display: "flex", flexDirection: "column",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <MapPin size={18} color={COLORS.primary} />
+            <span style={{ fontWeight: 600, fontSize: 17 }}>Railway Depots, Sheds & Coach Locations</span>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: COLORS.muted, cursor: "pointer" }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search locations..."
+            style={{ ...textInputStyle(COLORS), flex: 1 }}
+          />
+          <button
+            onClick={onOpenAdd}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8,
+              background: COLORS.primary, border: "none", color: "#00131A", fontWeight: 600,
+              fontSize: 12.5, cursor: "pointer",
+            }}
+          >
+            <Plus size={14} /> Add New Location
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", border: `1px solid ${COLORS.border}`, borderRadius: 10 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: "left", background: "rgba(255,255,255,0.03)", color: COLORS.muted, fontSize: 11.5 }}>
+                <th style={{ padding: "8px 10px" }}>Location Name</th>
+                <th style={{ padding: "8px 10px" }}>Code</th>
+                <th style={{ padding: "8px 10px" }}>Type</th>
+                <th style={{ padding: "8px 10px", textAlign: "right" }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLocs.map((loc) => (
+                <tr key={loc.id} style={{ borderTop: `1px solid ${COLORS.border}` }}>
+                  <td style={{ padding: "10px", fontWeight: 500 }}>
+                    {loc.name}
+                    {loc.description && <div style={{ fontSize: 11, color: COLORS.muted }}>{loc.description}</div>}
+                  </td>
+                  <td style={{ padding: "10px", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+                    {loc.code || "—"}
+                  </td>
+                  <td style={{ padding: "10px" }}>
+                    <span style={{
+                      fontSize: 11, padding: "2px 7px", borderRadius: 6,
+                      background: "rgba(56,189,248,0.12)", color: "#38BDF8", fontWeight: 600,
+                    }}>
+                      {loc.type || "DEPOT"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "10px", textAlign: "right" }}>
+                    <button
+                      onClick={() => handleDelete(loc.id, loc.name)}
+                      disabled={deletingId === loc.id}
+                      style={{
+                        background: "transparent", border: "none", color: "#EF4444",
+                        cursor: "pointer", padding: "4px 8px", borderRadius: 4,
+                      }}
+                      title="Delete Location"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filteredLocs.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ padding: "20px", textAlign: "center", color: COLORS.muted }}>
+                    No railway locations found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "7px 16px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+              background: "transparent", color: COLORS.white, cursor: "pointer", fontSize: 13,
+            }}
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -700,7 +1118,6 @@ function AssetDetailsDrawer({ COLORS, asset, onClose, onEdit, onDecommission }) 
                 value={asset.warranty_end ? `Until ${asset.warranty_end.slice(0, 10)}` : "—"}
               />
               <DetailRow COLORS={COLORS} icon={Calendar} label="Registered" value={asset.created_at ? asset.created_at.slice(0, 10) : "—"} />
-              <DetailRow COLORS={COLORS} icon={Calendar} label="Last Updated" value={asset.updated_at ? asset.updated_at.slice(0, 10) : "—"} />
 
               <button
                 onClick={onEdit}

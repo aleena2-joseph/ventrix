@@ -24,8 +24,9 @@ const requireRole = (...allowedRoles) => (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: "Not authenticated" });
   }
-  const roleName = req.user.role_name || req.user.role;
-  if (!allowedRoles.includes(roleName) && !allowedRoles.includes("ADMIN") && roleName !== "ADMIN") {
+  const roleName = (req.user.role_name || req.user.role || "").toUpperCase();
+  const normalizedAllowed = allowedRoles.map((r) => r.toUpperCase());
+  if (!normalizedAllowed.includes(roleName) && roleName !== "ADMIN" && roleName !== "VENTRIX_ADMIN") {
     return res.status(403).json({
       success: false,
       message: `This action requires one of: ${allowedRoles.join(", ")}`,

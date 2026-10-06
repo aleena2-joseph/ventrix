@@ -82,11 +82,17 @@ export default function RolePermissionsPage() {
         setError(res.message || "Failed to load permission matrix.");
         return;
       }
-      setRoles(res.data.roles || []);
-      setPermissions(res.data.permissions || []);
+      const filteredRoles = (res.data.roles || []).filter((r) =>
+        ["ADMIN", "ENGINEER", "TECHNICIAN"].includes(r.name)
+      );
+      const filteredPermissions = (res.data.permissions || []).filter(
+        (p) => !["customers.manage", "procurement.manage"].includes(p.permission_key)
+      );
+      setRoles(filteredRoles);
+      setPermissions(filteredPermissions);
       setGrants(res.data.grants || {});
-      if (!selectedRoleId && res.data.roles?.length) {
-        const firstEditable = res.data.roles.find((r) => !r.isLocked) || res.data.roles[0];
+      if (!selectedRoleId && filteredRoles.length) {
+        const firstEditable = filteredRoles.find((r) => !r.isLocked) || filteredRoles[0];
         setSelectedRoleId(String(firstEditable.id));
       }
     } catch {

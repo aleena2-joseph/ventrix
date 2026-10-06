@@ -37,9 +37,8 @@ async function ensurePermissionsSchema() {
         ('parts.request', 'Request spare parts', 'Operations', 'Submit spare part requisitions for work orders'),
         ('parts.issue', 'Issue warehouse stock', 'Operations', 'Physically issue approved spare parts from warehouse'),
         ('inventory.manage', 'Manage inventory', 'Operations', 'Manage parts and stock'),
-        ('procurement.manage', 'Manage procurement', 'Operations', 'Manage suppliers and purchase orders'),
         ('products.manage', 'Manage products', 'Administration', 'Manage product catalogue'),
-        ('customers.manage', 'Manage customers', 'Administration', 'Manage customer organizations'),
+        ('locations.manage', 'Manage Locations & Depots', 'Administration', 'Create and configure railway depot, yard, and coach locations'),
         ('users.manage', 'Manage users', 'Administration', 'Create, activate, and deactivate users'),
         ('settings.manage', 'Manage permission matrix', 'Administration', 'Configure role permissions'),
         ('reports.view', 'View fleet reports', 'Monitoring', 'View and export fleet health and audit reports')
@@ -53,7 +52,7 @@ async function ensurePermissionsSchema() {
           'dashboard.view','assets.view','assets.manage','fleet.view','fleet.manage',
           'telemetry.view','predictions.view','alerts.view','alerts.manage',
           'maintenance.view','maintenance.manage','maintenance.verify','parts.issue',
-          'inventory.manage','procurement.manage','products.manage','customers.manage','users.manage','reports.view','settings.manage'
+          'inventory.manage','products.manage','locations.manage','users.manage','reports.view','settings.manage'
         ))
         OR (r.name = 'ENGINEER' AND p.permission_key IN (
           'dashboard.view','assets.view','fleet.view','telemetry.view','predictions.view','alerts.view',
@@ -82,6 +81,7 @@ const getRoles = async (req, res) => {
              COUNT(CASE WHEN u.status = 'ACTIVE' THEN 1 END)::int AS active_user_count
       FROM roles r
       LEFT JOIN users u ON u.role_id = r.id
+      WHERE r.name IN ('ADMIN', 'ENGINEER', 'TECHNICIAN')
       GROUP BY r.id, r.name, r.description
       ORDER BY r.id ASC
     `);
@@ -109,11 +109,12 @@ const getPermissionMatrix = async (req, res) => {
                COUNT(u.id)::int AS user_count
         FROM roles r
         LEFT JOIN users u ON u.role_id = r.id
+        WHERE r.name IN ('ADMIN', 'ENGINEER', 'TECHNICIAN')
         GROUP BY r.id, r.name, r.description
         ORDER BY r.id ASC
       `),
       pool.query(
-        "SELECT permission_key, label, category, description FROM permissions ORDER BY category ASC, permission_key ASC"
+        "SELECT permission_key, label, category, description FROM permissions WHERE permission_key NOT IN ('customers.manage', 'procurement.manage') ORDER BY category ASC, permission_key ASC"
       ),
       pool.query("SELECT role_id, permission_key FROM role_permissions"),
     ]);

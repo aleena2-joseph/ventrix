@@ -96,7 +96,11 @@ export default function UsersPage() {
       else setError(usersRes.message || "Failed to load users.");
 
       if (rolesRes?.success) {
-        setRoles(rolesRes.data || []);
+        setRoles(
+          (rolesRes.data || []).filter((r) =>
+            ["ADMIN", "ENGINEER", "TECHNICIAN"].includes(r.name)
+          )
+        );
       }
     } catch {
       setError("Could not reach backend services.");

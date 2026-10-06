@@ -167,7 +167,7 @@ def demo_sample_inference():
 
     for idx, row in predictions_df.iterrows():
         rul = row["predicted_rul"]
-        status = "🔴 CRITICAL / ACTION REQUIRED" if rul < 300 else ("🟡 WARNING" if rul < 800 else "🟢 HEALTHY / NOMINAL")
+        status = "🔴 CRITICAL / ACTION REQUIRED" if rul < 150 else ("🟡 HIGH WEAR" if rul < 500 else ("🔵 MEDIUM" if rul < 1000 else "🟢 NOMINAL / HEALTHY"))
         print(f"Asset ID:           {row['asset_id']}")
         print(f"  Operating State:  {row['asset_state']} (Health: {row['health_score']}%)")
         print(f"  Filter DP:        {row['filter_dp']} Pa | Compressor Current: {row['compressor_current']} A")
@@ -219,15 +219,19 @@ if __name__ == "__main__":
             rul = float(row.get("predicted_rul", 0.0))
             health = float(row.get("health_score", 100.0)) if pd.notnull(row.get("health_score")) else 100.0
             
-            # Determine risk category
-            if rul < 250 or health < 45:
+            # Determine unified risk category
+            # CRITICAL: < 150h or health < 40%
+            # HIGH: 150h-500h or health < 60%
+            # MEDIUM: 500h-1000h or health < 80%
+            # NOMINAL: >= 1000h and health >= 80%
+            if rul < 150 or health < 40:
                 risk = "CRITICAL"
-            elif rul < 600 or health < 65:
+            elif rul < 500 or health < 60:
                 risk = "HIGH"
-            elif rul < 1200 or health < 80:
+            elif rul < 1000 or health < 80:
                 risk = "MEDIUM"
             else:
-                risk = "LOW"
+                risk = "NOMINAL"
 
             results.append({
                 "asset_id": str(row.get("asset_id", "UNKNOWN")),

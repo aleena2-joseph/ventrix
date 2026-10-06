@@ -40,10 +40,12 @@ const createServiceRequest = async (req, res) => {
        WHERE a.id = $1`,
       [asset_id]
     );
-    if (assetOrg.rows.length === 0 || !assetOrg.rows[0].organization_id) {
-      return res.status(404).json({ success: false, message: "Asset not found or not linked to a customer yet" });
+    let organizationId = assetOrg.rows[0]?.organization_id;
+    if (!organizationId) {
+      const defaultOrg = await pool.query(`SELECT id FROM organizations LIMIT 1`);
+      organizationId = defaultOrg.rows[0]?.id || 1;
     }
-    const organizationId = assetOrg.rows[0].organization_id;
+
 
     if (isCustomerRole(req.user.role) && organizationId !== req.user.organizationId) {
       return res.status(403).json({ success: false, message: "Not your organization's asset" });

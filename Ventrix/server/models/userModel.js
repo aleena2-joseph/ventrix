@@ -1,13 +1,12 @@
 const pool = require("../config/db");
 
-// Joined with role/org so authController can build a JWT payload and
+// Joined with role so authController can build a JWT payload and
 // the frontend can render "who am I" without a second request.
 const findUserByEmail = async (email) => {
   const result = await pool.query(
-    `SELECT u.*, r.name AS role_name, o.name AS organization_name, o.type AS org_type
+    `SELECT u.*, r.name AS role_name
      FROM users u
      LEFT JOIN roles r ON u.role_id = r.id
-     LEFT JOIN organizations o ON u.organization_id = o.id
      WHERE LOWER(u.email) = LOWER($1)`,
     [email]
   );
@@ -17,39 +16,30 @@ const findUserByEmail = async (email) => {
 const findUserById = async (id) => {
   const result = await pool.query(
     `SELECT u.id, u.name, u.email, u.status, u.created_at, u.updated_at,
-            u.organization_id, o.name AS organization_name, o.type AS org_type,
             u.role_id, r.name AS role_name
      FROM users u
      LEFT JOIN roles r ON u.role_id = r.id
-     LEFT JOIN organizations o ON u.organization_id = o.id
      WHERE u.id = $1`,
     [id]
   );
   return result.rows[0];
 };
 
-// organizationId/roleId default to Indian Railways / CUSTOMER_USER so a
-// self-registration through POST /api/auth/register produces a sensible
-// account even if the frontend doesn't ask for those fields explicitly.
-const createUser = async (name, email, password, organizationId, roleId) => {
+// Default registration fallback for single-tier platform
+const createUser = async (name, email, password, roleId) => {
   const result = await pool.query(
-    `INSERT INTO users (name, email, password, organization_id, role_id)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, name, email, organization_id, role_id, status, created_at`,
-    [name, email, password, organizationId, roleId]
+    `INSERT INTO users (name, email, password, role_id)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, name, email, role_id, status, created_at`,
+    [name, email, password, roleId]
   );
   return findUserById(result.rows[0].id);
 };
 
-// Filterable users query supporting search, role, organization, and status filters
+// Filterable users query supporting search, role, and status filters
 const getAllUsers = async (filters = {}) => {
   const conditions = [];
   const values = [];
-
-  if (filters.organizationId) {
-    values.push(filters.organizationId);
-    conditions.push(`u.organization_id = $${values.length}`);
-  }
 
   if (filters.roleId) {
     values.push(filters.roleId);
@@ -70,11 +60,9 @@ const getAllUsers = async (filters = {}) => {
 
   const query = `
     SELECT u.id, u.name, u.email, u.status, u.created_at, u.updated_at,
-           u.organization_id, o.name AS organization_name, o.type AS org_type,
            u.role_id, r.name AS role_name
     FROM users u
     LEFT JOIN roles r ON u.role_id = r.id
-    LEFT JOIN organizations o ON u.organization_id = o.id
     ${whereClause}
     ORDER BY u.id ASC
   `;
@@ -83,13 +71,9 @@ const getAllUsers = async (filters = {}) => {
   return result.rows;
 };
 
-const findUsersByOrganization = async (organizationId, filters = {}) => {
-  return getAllUsers({ ...filters, organizationId });
-};
-
-// Update user details (name, email, role_id, organization_id, status)
+// Update user details (name, email, role_id, status)
 const updateUser = async (id, fields) => {
-  const allowed = ["name", "email", "role_id", "organization_id", "status"];
+  const allowed = ["name", "email", "role_id", "status"];
   const updates = [];
   const values = [];
 
@@ -199,14 +183,13 @@ const getPermissionsForRole = async (roleName, roleId) => {
     ],
   };
 
-  return DEFAULTS[roleName] || DEFAULTS.VENTRIX_ADMIN;
+  return DEFAULTS[roleName] || DEFAULTS.ADMIN;
 };
 
 module.exports = {
   findUserByEmail,
   findUserById,
   createUser,
-  findUsersByOrganization,
   getAllUsers,
   updateUser,
   updateUserPassword,

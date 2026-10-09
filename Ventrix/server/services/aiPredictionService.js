@@ -25,20 +25,35 @@ const PYTHON_SCRIPT_PATH = path.resolve(
 );
 
 /**
- * Determine risk level based on standard Ventrix unified thresholds:
- *   CRITICAL: RUL < 150h or Health < 40%
- *   HIGH:     150h - 500h or Health < 60%
- *   MEDIUM:   500h - 1000h or Health < 80%
- *   NOMINAL:  RUL >= 1000h and Health >= 80%
+ * Determine risk level based on Remaining Useful Life (RUL) as the primary AI metric:
+ *   CRITICAL: RUL < 150h (Immediate inspection required)
+ *   HIGH:     150h–500h (Maintenance turnaround within 72h)
+ *   MEDIUM:   500h–1000h (Increased routine monitoring)
+ *   NOMINAL:  RUL >= 1000h (Normal operating condition)
  */
-function classifyRiskLevel(rulHours, healthScore) {
+function classifyRiskLevel(rulHours) {
   const rul = Number(rulHours);
-  const health = Number(healthScore);
-
-  if (rul < 150 || health < 40) return "CRITICAL";
-  if (rul < 500 || health < 60) return "HIGH";
-  if (rul < 1000 || health < 80) return "MEDIUM";
+  if (rul < 150) return "CRITICAL";
+  if (rul < 500) return "HIGH";
+  if (rul < 1000) return "MEDIUM";
   return "NOMINAL";
+}
+
+/**
+ * Separate condition indicator based on Health Score (0–100%):
+ *   >= 90%: Healthy
+ *   75–89%: Good
+ *   60–74%: Warning
+ *   40–59%: Maintenance Required
+ *   < 40%:  Critical
+ */
+function classifyHealthCondition(healthScore) {
+  const health = Number(healthScore);
+  if (health >= 90) return "Healthy";
+  if (health >= 75) return "Good";
+  if (health >= 60) return "Warning";
+  if (health >= 40) return "Maintenance Required";
+  return "Critical";
 }
 
 /**
@@ -141,7 +156,8 @@ function computeFallbackRUL(record) {
 
   const factor = Math.max(0.01, health / 100);
   const rulHours = Math.round(Math.min(remainingBudget, remainingBudget * factor));
-  const risk = classifyRiskLevel(rulHours, health);
+  const risk = classifyRiskLevel(rulHours);
+  const condition = classifyHealthCondition(health);
 
   return {
     asset_id: record.asset_id,
@@ -149,7 +165,9 @@ function computeFallbackRUL(record) {
     predicted_days: Number((rulHours / 24).toFixed(1)),
     risk_level: risk,
     health_score: health,
+    health_condition: condition,
     model_version: "physics-heuristic-v1",
+    prediction_source: "PHYSICS_FALLBACK",
   };
 }
 
@@ -157,7 +175,7 @@ function computeFallbackRUL(record) {
  * Core function: runs the prediction pipeline across all assets or specified assetCodes.
  */
 async function runPredictionPipeline(assetCodes = null) {
-  // 1. Fetch latest telemetry row for each asset
+  // 1. Fetch latest telemetry row for each asset, querying dedicated physical sensor columns
   const query = `
     SELECT DISTINCT ON (t.asset_id)
       t.id AS telemetry_id,
@@ -173,6 +191,10 @@ async function runPredictionPipeline(assetCodes = null) {
       t.power,
       t.operating_hours,
       t.asset_state,
+      t.filter_dp,
+      t.cooling_capacity,
+      t.compressor_wear,
+      t.motor_wear,
       t.raw_payload
     FROM telemetry t
     JOIN assets a ON a.id = t.asset_id
@@ -207,11 +229,11 @@ async function runPredictionPipeline(assetCodes = null) {
       supply_air_temperature: Number(r.temperature || sim.supplyAirTemperature || 21.0),
       refrigerant_pressure: Number(r.pressure || sim.refrigerantPressure || 4.8),
       compressor_current: Number(r.current || sim.compressorCurrent || 14.0),
-      filter_dp: Number(sim.filterDP || 150.0),
-      cooling_capacity: Number(sim.coolingCapacity || 35.0),
+      filter_dp: r.filter_dp != null ? Number(r.filter_dp) : Number(sim.filterDP || 150.0),
+      cooling_capacity: r.cooling_capacity != null ? Number(r.cooling_capacity) : Number(sim.coolingCapacity || 35.0),
       power_consumption: Number(r.power || sim.powerConsumption || 10.0),
-      compressor_wear: Number(sim.compressorWear || 0.05),
-      motor_wear: Number(sim.motorWear || 0.05),
+      compressor_wear: r.compressor_wear != null ? Number(r.compressor_wear) : Number(sim.compressorWear || 0.05),
+      motor_wear: r.motor_wear != null ? Number(r.motor_wear) : Number(sim.motorWear || 0.05),
       refrigerant_charge: Number(sim.refrigerantCharge || 1.0),
       health_score: Number(health.healthScore || 90.0),
     };
@@ -220,12 +242,14 @@ async function runPredictionPipeline(assetCodes = null) {
   // 3. Run Inference (Python model first, fallback on error)
   let rawPredictions = [];
   let modelEngine = "random-forest-v1";
+  let predictionSource = "AI_MODEL";
 
   try {
     const pyResult = await runPythonInference(inputRecords);
     if (pyResult?.success && Array.isArray(pyResult.predictions)) {
       rawPredictions = pyResult.predictions;
       modelEngine = "random-forest-v1";
+      predictionSource = "AI_MODEL";
     } else {
       throw new Error("Invalid output format from Python model");
     }
@@ -233,6 +257,7 @@ async function runPredictionPipeline(assetCodes = null) {
     console.warn("⚠️ [AIPredictionService] Python Random Forest inference fallback:", pyErr.message);
     rawPredictions = inputRecords.map((rec) => computeFallbackRUL(rec));
     modelEngine = "physics-heuristic-v1";
+    predictionSource = "PHYSICS_FALLBACK";
   }
 
   // 4. Persist to PostgreSQL and build enriched output
@@ -244,7 +269,8 @@ async function runPredictionPipeline(assetCodes = null) {
 
     const rulHours = Number(pred.predicted_rul);
     const healthScore = Number(pred.health_score || rec.health_score);
-    const riskLevel = classifyRiskLevel(rulHours, healthScore);
+    const riskLevel = classifyRiskLevel(rulHours);
+    const healthCondition = classifyHealthCondition(healthScore);
     const explainability = generateExplainability(rec, rulHours, riskLevel);
 
     // Save prediction record
@@ -254,14 +280,14 @@ async function runPredictionPipeline(assetCodes = null) {
       [rec.db_asset_id, rec.telemetry_id, healthScore, rulHours, riskLevel, modelEngine]
     );
 
-    // Auto-sync asset health & status if degraded
+    // Auto-sync asset health & status if degraded (and prevent duplicate active alerts)
     if (riskLevel === "CRITICAL") {
       await pool.query(
         `UPDATE assets SET status = 'WARNING', updated_at = NOW() WHERE id = $1 AND status = 'OPERATIONAL'`,
         [rec.db_asset_id]
       );
 
-      // Create an AI predictive alert if one doesn't exist
+      // Create an AI predictive alert only if an unresolved AI alert doesn't already exist
       await pool.query(
         `INSERT INTO alerts (asset_id, level, title, message, source)
          SELECT $1, 'critical', 'Imminent Failure Predicted (RUL < 150h)', $2, 'ai'
@@ -271,16 +297,28 @@ async function runPredictionPipeline(assetCodes = null) {
          )`,
         [rec.db_asset_id, `AI model predicts remaining useful life of ${rulHours}h. Immediate inspection required.`]
       );
+    } else if (riskLevel === "HIGH") {
+      await pool.query(
+        `INSERT INTO alerts (asset_id, level, title, message, source)
+         SELECT $1, 'warning', 'High Wear Advisory (RUL 150-500h)', $2, 'ai'
+         WHERE NOT EXISTS (
+           SELECT 1 FROM alerts
+           WHERE asset_id = $1 AND source = 'ai' AND is_resolved = FALSE
+         )`,
+        [rec.db_asset_id, `AI model predicts remaining useful life of ${rulHours}h. Service turnaround recommended within 72 hours.`]
+      );
     }
 
     finalResults.push({
       asset_code: rec.asset_id,
       asset_name: rec.asset_name,
       health_score: healthScore,
+      health_condition: healthCondition,
       predicted_rul: rulHours,
       predicted_days: Number((rulHours / 24).toFixed(1)),
       risk_level: riskLevel,
       model_version: modelEngine,
+      prediction_source: predictionSource,
       predicted_at: new Date().toISOString(),
       explainability,
       sensors: {
@@ -288,6 +326,7 @@ async function runPredictionPipeline(assetCodes = null) {
         refrigerant_pressure: rec.refrigerant_pressure,
         compressor_current: rec.compressor_current,
         filter_dp: rec.filter_dp,
+        cooling_capacity: rec.cooling_capacity,
         power_consumption: rec.power_consumption,
         operating_hours: rec.operating_hours,
       },
@@ -305,7 +344,7 @@ async function runPredictionPipeline(assetCodes = null) {
 /**
  * Retrieve the latest prediction per asset from the database.
  */
-async function getLatestPredictions(organizationId = null) {
+async function getLatestPredictions() {
   const result = await pool.query(
     `SELECT DISTINCT ON (p.asset_id)
         p.id,
@@ -328,11 +367,7 @@ async function getLatestPredictions(organizationId = null) {
      LEFT JOIN telemetry t ON p.telemetry_id = t.id
      LEFT JOIN coaches c ON a.coach_id = c.id
      LEFT JOIN trains tr ON c.train_id = tr.id
-     LEFT JOIN projects pj ON tr.project_id = pj.id
-     WHERE ($1::int IS NULL OR pj.organization_id = $1)
      ORDER BY p.asset_id, p.predicted_at DESC`
-    ,
-    [organizationId]
   );
 
   const enriched = result.rows.map((row) => {
@@ -353,7 +388,9 @@ async function getLatestPredictions(organizationId = null) {
     return {
       ...row,
       health_score: Number(row.health_score),
+      health_condition: classifyHealthCondition(row.health_score),
       predicted_rul: Number(row.predicted_rul),
+      prediction_source: row.model_version === "random-forest-v1" ? "AI_MODEL" : "PHYSICS_FALLBACK",
       explainability: explain,
     };
   });
@@ -365,5 +402,6 @@ module.exports = {
   runPredictionPipeline,
   getLatestPredictions,
   classifyRiskLevel,
+  classifyHealthCondition,
   generateExplainability,
 };

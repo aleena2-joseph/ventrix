@@ -14,14 +14,18 @@ const insertTelemetry = async (assetId, reading, rawPayload, client = pool) => {
     power,
     operatingHours,
     assetState,
+    filterDP,
+    coolingCapacity,
+    compressorWear,
+    motorWear,
   } = reading;
 
   const result = await client.query(
     `INSERT INTO telemetry
       (asset_id, recorded_at, temperature, pressure, vibration,
        current, voltage, humidity, power, operating_hours,
-       asset_state, raw_payload)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       asset_state, filter_dp, cooling_capacity, compressor_wear, motor_wear, raw_payload)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      RETURNING *`,
     [
       assetId,
@@ -35,6 +39,10 @@ const insertTelemetry = async (assetId, reading, rawPayload, client = pool) => {
       power,
       operatingHours,
       assetState,
+      filterDP != null ? filterDP : null,
+      coolingCapacity != null ? coolingCapacity : null,
+      compressorWear != null ? compressorWear : null,
+      motorWear != null ? motorWear : null,
       rawPayload,
     ]
   );
@@ -55,10 +63,19 @@ const persistSimulationReading = async (assetId, reading, rawPayload) => {
 
     if (Number.isFinite(healthScore) || Number.isFinite(rulHours)) {
       const safeHealth = Number.isFinite(healthScore) ? healthScore : null;
-      const riskLevel = !Number.isFinite(healthScore) ? null
-        : healthScore < 40 ? "CRITICAL"
-          : healthScore < 60 ? "HIGH"
-            : healthScore < 80 ? "MEDIUM" : "LOW";
+      // Primary AI Risk Classification based strictly on RUL
+      const riskLevel = Number.isFinite(rulHours)
+        ? (rulHours < 150 ? "CRITICAL"
+          : rulHours < 500 ? "HIGH"
+          : rulHours < 1000 ? "MEDIUM"
+          : "NOMINAL")
+        : (Number.isFinite(healthScore)
+          ? (healthScore < 40 ? "CRITICAL"
+            : healthScore < 60 ? "HIGH"
+            : healthScore < 80 ? "MEDIUM"
+            : "NOMINAL")
+          : null);
+
       await client.query(
         `INSERT INTO predictions (asset_id, telemetry_id, health_score, rul_hours, risk_level, model_version)
          VALUES ($1, $2, $3, $4, $5, 'physics-v1')`,
@@ -66,6 +83,64 @@ const persistSimulationReading = async (assetId, reading, rawPayload) => {
       );
     }
 
+    // Rule-Based Operational Threshold Checks (with duplicate alert prevention)
+    const sim = rawPayload.telemetry || {};
+    const tempVal = reading.temperature;
+    const pressVal = reading.pressure;
+    const filterDPVal = reading.filterDP;
+    const currentVal = reading.current;
+
+    const ruleChecks = [];
+
+    // Critical: Very low refrigerant pressure (< 3.8 bar)
+    if (pressVal != null && pressVal < 3.8) {
+      ruleChecks.push({
+        level: "critical",
+        title: "Low Refrigerant Pressure",
+        message: `Refrigerant circuit pressure dropped to ${pressVal} bar (nominal >= 4.2 bar). Potential micro-leak or compressor suction fault.`,
+      });
+    }
+
+    // Warning: Elevated supply air temperature (> 25.5°C)
+    if (tempVal != null && tempVal > 25.5) {
+      ruleChecks.push({
+        level: "warning",
+        title: "Elevated Supply Air Temperature",
+        message: `Supply air temperature reached ${tempVal}°C above design comfort limit. Cooling performance degraded.`,
+      });
+    }
+
+    // Warning: High filter differential pressure (> 280 Pa)
+    if (filterDPVal != null && filterDPVal > 280) {
+      ruleChecks.push({
+        level: "warning",
+        title: "High Filter Differential Pressure",
+        message: `Filter differential pressure at ${filterDPVal} Pa indicates particulate clogging. Filter replacement turnaround recommended.`,
+      });
+    }
+
+    // Warning: High compressor current draw (> 18.0 A)
+    if (currentVal != null && currentVal > 18.0) {
+      ruleChecks.push({
+        level: "warning",
+        title: "High Compressor Current Overdraw",
+        message: `Compressor motor drawing ${currentVal} A exceeding nominal load limits due to mechanical bearing wear.`,
+      });
+    }
+
+    for (const rule of ruleChecks) {
+      await client.query(
+        `INSERT INTO alerts (asset_id, level, title, message, source)
+         SELECT $1, $2, $3, $4, 'rule'
+         WHERE NOT EXISTS (
+           SELECT 1 FROM alerts
+           WHERE asset_id = $1 AND title = $3 AND source = 'rule' AND is_resolved = FALSE
+         )`,
+        [assetId, rule.level, rule.title, rule.message]
+      );
+    }
+
+    // Process simulator events if emitted
     for (const event of Array.isArray(rawPayload.events) ? rawPayload.events : []) {
       if (!event?.eventType) continue;
       const level = event.severity === "CRITICAL" ? "critical"
@@ -113,13 +188,16 @@ const persistSimulationReading = async (assetId, reading, rawPayload) => {
   }
 };
 
-// One newest reading per asset — this is what the dashboard's
-// "overview" cards will use. organizationId scopes results for
-// customer-role callers; pass null (Ventrix staff) to see everything.
-const getLatestPerAsset = async (organizationId = null) => {
+// One newest reading per asset — for dashboard overview cards.
+const getLatestPerAsset = async () => {
   const result = await pool.query(
     `SELECT DISTINCT ON (t.asset_id)
         t.*, a.asset_code, a.name AS asset_name, a.zone,
+        CASE
+          WHEN t.recorded_at >= NOW() - INTERVAL '30 seconds' THEN 'LIVE'
+          WHEN t.recorded_at >= NOW() - INTERVAL '5 minutes' THEN 'STALE'
+          ELSE 'OFFLINE'
+        END AS telemetry_status,
         p.rul_hours AS predicted_rul_hours,
         p.health_score AS predicted_health_score,
         p.risk_level, p.model_version, p.predicted_at
@@ -127,15 +205,12 @@ const getLatestPerAsset = async (organizationId = null) => {
      JOIN assets a ON a.id = t.asset_id
      LEFT JOIN coaches c ON a.coach_id = c.id
      LEFT JOIN trains tr ON c.train_id = tr.id
-     LEFT JOIN projects pj ON tr.project_id = pj.id
      LEFT JOIN LATERAL (
          SELECT rul_hours, health_score, risk_level, model_version, predicted_at
          FROM predictions p WHERE p.asset_id = t.asset_id
          ORDER BY p.predicted_at DESC, p.id DESC LIMIT 1
        ) p ON TRUE
-     WHERE ($1::int IS NULL OR pj.organization_id = $1)
-     ORDER BY t.asset_id, t.recorded_at DESC`,
-    [organizationId]
+     ORDER BY t.asset_id, t.recorded_at DESC`
   );
   return result.rows;
 };

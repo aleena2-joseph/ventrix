@@ -13,7 +13,6 @@ const pool = require("../config/db");
  */
 const logAction = async ({
   userId = null,
-  organizationId = null,
   action,
   entityType,
   entityId = null,
@@ -22,12 +21,11 @@ const logAction = async ({
 }) => {
   try {
     const result = await pool.query(
-      `INSERT INTO audit_logs (user_id, organization_id, action, entity_type, entity_id, old_data, new_data)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_data, new_data)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [
         userId,
-        organizationId,
         action,
         entityType,
         entityId !== null && entityId !== undefined ? String(entityId) : null,

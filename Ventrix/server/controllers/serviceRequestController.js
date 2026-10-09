@@ -5,16 +5,12 @@ const auditModel = require("../models/auditModel");
 // GET /api/service-requests
 const getServiceRequests = async (req, res) => {
   try {
-    const orgId = isCustomerRole(req.user.role) ? req.user.organizationId : (req.query.organizationId || null);
     const result = await pool.query(
-      `SELECT sr.*, a.asset_code, a.name AS asset_name, o.name AS organization_name, u.name AS created_by_name
+      `SELECT sr.*, a.asset_code, a.name AS asset_name, u.name AS created_by_name
        FROM service_requests sr
        JOIN assets a ON sr.asset_id = a.id
-       JOIN organizations o ON sr.organization_id = o.id
        LEFT JOIN users u ON sr.created_by = u.id
-       WHERE ($1::int IS NULL OR sr.organization_id = $1)
-       ORDER BY sr.created_at DESC`,
-      [orgId]
+       ORDER BY sr.created_at DESC`
     );
     res.status(200).json({ success: true, data: result.rows });
   } catch (error) {
@@ -31,37 +27,16 @@ const createServiceRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: "asset_id and title are required" });
     }
 
-    const assetOrg = await pool.query(
-      `SELECT o.id AS organization_id FROM assets a
-       LEFT JOIN coaches c ON a.coach_id = c.id
-       LEFT JOIN trains t ON c.train_id = t.id
-       LEFT JOIN projects pj ON t.project_id = pj.id
-       LEFT JOIN organizations o ON pj.organization_id = o.id
-       WHERE a.id = $1`,
-      [asset_id]
-    );
-    let organizationId = assetOrg.rows[0]?.organization_id;
-    if (!organizationId) {
-      const defaultOrg = await pool.query(`SELECT id FROM organizations LIMIT 1`);
-      organizationId = defaultOrg.rows[0]?.id || 1;
-    }
-
-
-    if (isCustomerRole(req.user.role) && organizationId !== req.user.organizationId) {
-      return res.status(403).json({ success: false, message: "Not your organization's asset" });
-    }
-
     const result = await pool.query(
-      `INSERT INTO service_requests (organization_id, asset_id, created_by, title, description, priority, status)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'MEDIUM'), 'OPEN') RETURNING *`,
-      [organizationId, asset_id, req.user.id, title, description, priority]
+      `INSERT INTO service_requests (asset_id, created_by, title, description, priority, status)
+       VALUES ($1, $2, $3, $4, COALESCE($5, 'MEDIUM'), 'OPEN') RETURNING *`,
+      [asset_id, req.user.id, title, description, priority]
     );
 
     const sr = result.rows[0];
 
     await auditModel.logAction({
       userId: req.user.id,
-      organizationId,
       action: "SERVICE_REQUEST_CREATED",
       entityType: "SERVICE_REQUEST",
       entityId: sr.id,

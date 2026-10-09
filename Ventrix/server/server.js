@@ -14,7 +14,6 @@ const inventoryRoutes = require("./routes/inventoryRoutes");
 const serviceRequestRoutes = require("./routes/serviceRequestRoutes");
 const alertRoutes = require("./routes/alertRoutes");
 const fleetRoutes = require("./routes/fleetRoutes");
-const locationRoutes = require("./routes/locationRoutes");
 
 const app = express();
 const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175")
@@ -24,9 +23,11 @@ const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:5173,http:
 
 const isOriginAllowed = (origin) => {
   if (!origin) return true;
-  if (allowedOrigins.includes(origin)) return true;
+  if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) return true;
   const localhostRegex = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-  return localhostRegex.test(origin);
+  if (localhostRegex.test(origin)) return true;
+  const vercelRegex = /^https:\/\/.*\.vercel\.app$/;
+  return vercelRegex.test(origin);
 };
 
 app.use(cors({
@@ -75,8 +76,11 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/service-requests", serviceRequestRoutes);
 app.use("/api/alerts", alertRoutes);
 app.use("/api/fleet", fleetRoutes);
-app.use("/api/locations", locationRoutes);
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server Running on Port ${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server Running on Port ${PORT}`);
+  });
+}
+
+module.exports = app;

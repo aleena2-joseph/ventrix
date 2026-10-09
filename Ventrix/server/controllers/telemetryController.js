@@ -161,6 +161,9 @@ const receiveTelemetry = async (req, res) => {
       pressure: Number(sim.refrigerantPressure),
       vibration: sim.vibration != null ? Number(sim.vibration) : null,
       filterDP: sim.filterDP != null ? Number(sim.filterDP) : null,
+      coolingCapacity: sim.coolingCapacity != null ? Number(sim.coolingCapacity) : null,
+      compressorWear: sim.compressorWear != null ? Number(sim.compressorWear) : null,
+      motorWear: sim.motorWear != null ? Number(sim.motorWear) : null,
       current: Number(sim.compressorCurrent),
       voltage: env.supplyVoltage != null ? Number(env.supplyVoltage) : null,
       humidity: env.humidity != null ? Number(env.humidity) : null,
@@ -187,11 +190,9 @@ const receiveTelemetry = async (req, res) => {
 
 // GET /api/telemetry/latest
 // One newest reading per asset — for the dashboard overview cards.
-// Customer-role callers only ever see their own organization's assets.
 const getLatest = async (req, res) => {
   try {
-    const orgId = isCustomerRole(req.user.role) ? req.user.organizationId : null;
-    const rows = await telemetryModel.getLatestPerAsset(orgId);
+    const rows = await telemetryModel.getLatestPerAsset();
     res.status(200).json({ success: true, data: rows });
   } catch (error) {
     console.error("❌ Failed to fetch latest telemetry:", error.message);
@@ -212,9 +213,6 @@ const getHistory = async (req, res) => {
     if (!asset) {
       return res.status(404).json({ success: false, message: `No asset found for code '${assetCode}'` });
     }
-    if (isCustomerRole(req.user.role) && asset.organization_id !== req.user.organizationId) {
-      return res.status(403).json({ success: false, message: "Not your organization's asset" });
-    }
 
     const rows = await telemetryModel.getHistoryForAsset(asset.id, limit);
     res.status(200).json({ success: true, data: rows });
@@ -230,8 +228,7 @@ const aiPredictionService = require("../services/aiPredictionService");
 
 const getPredictions = async (req, res) => {
   try {
-    const orgId = isCustomerRole(req.user.role) ? req.user.organizationId : null;
-    const predictions = await aiPredictionService.getLatestPredictions(orgId);
+    const predictions = await aiPredictionService.getLatestPredictions();
     res.status(200).json({ success: true, count: predictions.length, data: predictions });
   } catch (error) {
     console.error("❌ Failed to fetch latest predictions:", error.message);

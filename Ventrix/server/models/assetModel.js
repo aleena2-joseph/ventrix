@@ -1,22 +1,13 @@
 const pool = require("../config/db");
 
-// Every asset row returned to the frontend is joined all the way up to
-// product + coach + train + project + organization, since that join is
-// what makes "which customer owns this" derivable without a customer_id
-// column on assets itself.
+// Streamlined asset select: Train -> Coach -> HVAC Asset
 const ASSET_SELECT = `
   SELECT a.*,
-         pr.product_code, pr.name AS product_name, pr.specifications AS product_specifications,
          c.coach_number, c.coach_type,
-         t.id AS train_id, t.train_number,
-         pj.id AS project_id, pj.name AS project_name,
-         o.id AS organization_id, o.name AS organization_name
+         t.id AS train_id, t.train_number
   FROM assets a
-  LEFT JOIN products pr ON a.product_id = pr.id
   LEFT JOIN coaches c ON a.coach_id = c.id
   LEFT JOIN trains t ON c.train_id = t.id
-  LEFT JOIN projects pj ON t.project_id = pj.id
-  LEFT JOIN organizations o ON pj.organization_id = o.id
 `;
 
 const findAssetByCode = async (assetCode) => {
@@ -24,13 +15,8 @@ const findAssetByCode = async (assetCode) => {
   return result.rows[0];
 };
 
-// organizationId = null -> all assets (Ventrix staff). Non-null ->
-// scoped to that org only (customer roles).
-const getAllAssets = async (organizationId = null) => {
-  const result = await pool.query(
-    `${ASSET_SELECT} WHERE ($1::int IS NULL OR o.id = $1) ORDER BY a.id ASC`,
-    [organizationId]
-  );
+const getAllAssets = async () => {
+  const result = await pool.query(`${ASSET_SELECT} ORDER BY a.id ASC`);
   return result.rows;
 };
 
@@ -38,7 +24,6 @@ const WRITABLE_FIELDS = [
   "asset_code",
   "name",
   "asset_type",
-  "product_id",
   "coach_id",
   "zone",
   "install_date",
@@ -52,7 +37,7 @@ const sanitizeAssetFields = (fields) => {
   const sanitized = { ...fields };
 
   // Integer columns: convert empty string / NaN to null
-  ["product_id", "coach_id"].forEach((col) => {
+  ["coach_id"].forEach((col) => {
     if (sanitized[col] === "" || sanitized[col] === undefined || sanitized[col] === null) {
       sanitized[col] = null;
     } else {

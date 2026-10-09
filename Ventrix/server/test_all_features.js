@@ -32,54 +32,26 @@ async function runTests() {
     }
   }
 
-  // 2. Locations API & Role Enforcement
-  console.log("\n[2] Testing Railway Locations & Role Enforcement:");
+  // 2. User Administration & Role Enforcement
+  console.log("\n[2] Testing User Administration & Role Enforcement:");
   
-  // Everyone can read locations
-  const adminGetLoc = await req("http://localhost:5000/api/locations", {
+  // Admin can list users
+  const adminGetUsers = await req("http://localhost:5000/api/users", {
     headers: { Authorization: "Bearer " + tokens.ADMIN },
   });
-  console.log(`  ✅ Admin GET /api/locations -> Status ${adminGetLoc.status} (Found ${adminGetLoc.data?.data?.length} locations)`);
+  const userCount = adminGetUsers.data?.data?.length || adminGetUsers.data?.length || 0;
+  console.log(`  ✅ Admin GET /api/users -> Status ${adminGetUsers.status} (Found ${userCount} registered users)`);
 
-  const techGetLoc = await req("http://localhost:5000/api/locations", {
-    headers: { Authorization: "Bearer " + tokens.TECHNICIAN },
-  });
-  console.log(`  ✅ Technician GET /api/locations -> Status ${techGetLoc.status} (Allowed read for dropdown)`);
-
-  // Technician CANNOT create location (Must be 403 Forbidden)
-  const techPostLoc = await req("http://localhost:5000/api/locations", {
+  // Technician CANNOT create users (Must be 403 Forbidden)
+  const techPostUser = await req("http://localhost:5000/api/users", {
     method: "POST",
     headers: { Authorization: "Bearer " + tokens.TECHNICIAN, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Unauthorized Tech Shed", type: "WORKSHOP" }),
+    body: JSON.stringify({ name: "Unauthorized User", email: "unauthorized@test.com", password: "password123", roleId: 4 }),
   });
-  if (techPostLoc.status === 403) {
-    console.log(`  ✅ Technician POST /api/locations -> Correctly blocked with 403 Forbidden (Admin only!)`);
+  if (techPostUser.status === 403) {
+    console.log(`  ✅ Technician POST /api/users -> Correctly blocked with 403 Forbidden (Admin only!)`);
   } else {
-    console.error(`  ❌ Security failure: Technician POST status was ${techPostLoc.status}`);
-  }
-
-  // Admin CAN create location
-  const testLocName = "Test Rail Depot " + Date.now();
-  const adminPostLoc = await req("http://localhost:5000/api/locations", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + tokens.ADMIN, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: testLocName, code: "TEST-LOC", type: "DEPOT", description: "Automated test depot" }),
-  });
-  let createdLocId = null;
-  if (adminPostLoc.status === 201 && adminPostLoc.data.success) {
-    createdLocId = adminPostLoc.data.data.id;
-    console.log(`  ✅ Admin POST /api/locations -> Status 201 Created (ID: ${createdLocId}, Name: ${testLocName})`);
-  } else {
-    console.error(`  ❌ Admin POST /api/locations failed:`, adminPostLoc.status, adminPostLoc.data);
-  }
-
-  // Admin deletes test location
-  if (createdLocId) {
-    const adminDelLoc = await req("http://localhost:5000/api/locations/" + createdLocId, {
-      method: "DELETE",
-      headers: { Authorization: "Bearer " + tokens.ADMIN },
-    });
-    console.log(`  ✅ Admin DELETE /api/locations/${createdLocId} -> Status ${adminDelLoc.status} Deleted`);
+    console.error(`  ❌ Security failure: Technician POST status was ${techPostUser.status}`);
   }
 
   // 3. Telemetry Ingest & AI Prediction Pipeline

@@ -1,9 +1,11 @@
-# Ventrix — Complete Final Project Specification & Technical Architecture
+# Ventrix — Complete Master Project Specification & Technical Architecture
 
 **Project Title**: A Data-Driven Approach for Remaining Useful Life (RUL) Prediction of Railway HVAC Systems Using Artificial Intelligence.  
-**Platform**: Ventrix — Railway Rolling Stock HVAC Predictive Maintenance & Depot Logistics Platform  
-**Target Rolling Stock**: Premium Passenger Coaches (Rajdhani Express, Vande Bharat Express, Shatabdi Express)  
-**Technology Stack**: Node.js / Express.js, PostgreSQL, Python (scikit-learn), React (Vite), Kafka (optional event broker)
+**Platform**: **Ventrix is an intelligent railway HVAC predictive maintenance platform with integrated depot maintenance and spare-parts management.**  
+- **Primary Focus**: HVAC Condition Monitoring & Machine Learning-Based Predictive Maintenance.  
+- **Supporting Functions**: Depot Work Orders, Technician Dispatch, Spare Parts Inventory, and Closed-Loop Verification.  
+**Target Rolling Stock Application**: Premium Passenger Coaches (e.g., Rajdhani Express, Vande Bharat Express, Shatabdi Express).  
+**Technology Stack**: Node.js / Express.js, PostgreSQL, Python (scikit-learn), React (Vite), Kafka (optional event broker).
 
 ---
 
@@ -11,98 +13,109 @@
 
 Modern passenger railway operations rely heavily on Roof-Mounted AC Units (RMPUs) to maintain passenger comfort and cabin air quality. A mid-journey HVAC failure causes immediate passenger distress, service disruptions, and expensive emergency depot turnarounds.
 
-Traditional maintenance follows reactive (run-to-failure) or rigid time-based periodic maintenance. **Ventrix** replaces these outdated approaches with a **physics-informed Digital Twin and AI-driven predictive maintenance platform**:
-- **Continuous Condition Monitoring**: Physics-modeled digital twins generate real-time telemetry simulating operational stress, degradation, and environmental heat loads.
-- **Data-Driven RUL Estimation**: A trained Machine Learning model predicts remaining operational hours before critical component breakdown occurs.
-- **Decision-Support for Maintenance Engineers**: AI predictions provide explainable degradation indicators (why RUL is declining) to empower engineers to schedule targeted repairs before faults manifest.
-- **Closed-Loop Depot Operations**: Seamless workflow connecting alerts, service requests, work orders, spare part requisition, warehouse stock issuance, field measurement findings, and formal engineering verification.
+**Ventrix improves conventional railway HVAC maintenance by combining preventive maintenance, condition-based monitoring, and predictive maintenance into a unified, closed-loop platform:**
+
+- **Preventive Maintenance**: Manages recurring, calendar-based or mileage-based maintenance schedules (`maintenance_schedules`).
+- **Condition-Based Maintenance**: Continuously tracks real-time sensor limits to catch immediate operational breaches (e.g., refrigerant suction pressure loss, excessive compressor current).
+- **Predictive Maintenance**: Projects the Remaining Useful Life (RUL) of critical components using machine learning, allowing repairs to be scheduled days or weeks before functional failure occurs.
+- **Simulation-Based Digital Twin Hierarchy**: A digital representation linking trains, coaches, HVAC assets, live telemetry, and depot maintenance tickets.
+- **Decision-Support for Maintenance Engineers**: AI predictions provide explainable degradation indicators (why RUL is declining) to empower engineers to schedule targeted repairs before faults manifest. AI predictions support Engineer decision-making rather than autonomously executing maintenance actions.
+- **Closed-Loop Depot Operations**: Connects alerts, service requests, work orders, spare part requisition, admin inventory issuance, field measurement findings, post-maintenance telemetry re-evaluation, and formal engineering verification with persistent maintenance history.
 
 ---
 
 ## 2. User Roles & Operational Separation
 
-Ventrix enforces a strict three-tier role architecture to maintain operational integrity:
+Ventrix strictly enforces a **three-tier role architecture** to maintain operational integrity:
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    ADMIN (System Governance)                 │
-│      User Provisioning · RBAC Permissions · Fleet Oversight  │
-└──────────────────────────────┬───────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│             MAINTENANCE ENGINEER (Decision-Maker)            │
-│  Diagnostics · RUL Evaluation · Work Dispatch · Part Approval│
-└──────────────────────────────┬───────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│             FIELD TECHNICIAN (Physical Execution)            │
-│ Job Execution · Part Requisitions · Findings · Sign-Off Reports│
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                   1. ADMIN (System Governance)                   │
+│     User Provisioning · RBAC Permissions · Fleet Oversight       │
+│               Admin — Inventory/Warehouse Operations             │
+└─────────────────────────────────┬────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────┐
+│              2. MAINTENANCE ENGINEER (Decision-Maker)            │
+│   Diagnostics · RUL Evaluation · Work Dispatch · Part Approval   │
+│                 Service Request Triage · Sign-Off                │
+└─────────────────────────────────┬────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────┐
+│              3. FIELD TECHNICIAN (Physical Execution)            │
+│    Job Execution · Part Requisitions · Findings · Sign-Off       │
+│                  Service Request Defect Reports                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 1. **Admin (`admin@ventrix.com`)**:
    - **Responsibility**: System governance, user provisioning, dynamic RBAC permission toggling, asset registry management, warehouse stock oversight, and high-level fleet reliability metrics.
+   - **Inventory Role (Admin — Inventory/Warehouse Operations)**: The Administrator performs the physical warehouse issuance function when approved part requisitions are dispensed.
    - **Boundary**: Does **not** perform daily technician dispatching or physical maintenance.
 2. **Maintenance Engineer (`engineer@ventrix.com`)**:
-   - **Responsibility**: The primary operational decision-maker. Evaluates real-time telemetry, incoming alerts, and AI RUL forecasts. Converts predictive recommendations into scheduled work orders, dispatches technicians, approves spare part requisitions, inspects post-maintenance measurements, and signs off completed jobs.
+   - **Responsibility**: The primary operational decision-maker. Evaluates real-time telemetry, incoming alerts, service requests, and AI RUL forecasts. Converts predictive recommendations and scheduled plans into work orders, validates technician capacity, approves spare part requisitions, inspects post-maintenance telemetry, and formally verifies completed jobs.
 3. **Field Technician (`tech@ventrix.com`)**:
-   - **Responsibility**: On-site execution. Accepts assigned work orders, transitions job states, requisitions required spare parts, logs physical measurement findings (temperature delta, vibration, head pressure), and submits completion reports for engineering verification.
+   - **Responsibility**: On-site execution. Submits field service requests for observed defects, accepts assigned work orders, transitions job states, requisitions required spare parts, logs physical measurement findings (temperature delta, vibration, head pressure), and submits completion reports for engineering verification.
+
+> **Operational Interaction**: The Technician requests the required spare part, the Engineer approves the technical requirement, and the Admin performs the inventory issuance.
 
 ---
 
-## 3. End-to-End System Architecture
+## 3. End-to-End System & Data Flow Architecture
+
+In Ventrix, **the frontend never touches PostgreSQL directly**. All client interactions flow through authenticated REST APIs hosted by the Express backend.
 
 ```
-                    ┌─────────────────────────┐
-                    │ Railway HVAC Simulation │
-                    │ Physics + Degradation   │
-                    └───────────┬─────────────┘
-                                │
-                                ▼
-                    ┌─────────────────────────┐
-                    │ Telemetry Streaming      │
-                    │ Direct HTTP / Kafka      │
-                    └───────────┬─────────────┘
-                                │ (X-Telemetry-Key)
-                                ▼
-                    ┌─────────────────────────┐
-                    │ Express Backend API     │
-                    │ Ingest Validation       │
-                    └───────────┬─────────────┘
-                                │
-               ┌────────────────┼────────────────┐
-               ▼                ▼                ▼
-        ┌─────────────┐  ┌──────────────┐ ┌─────────────┐
-        │ PostgreSQL  │  │ AI Prediction│ │ Maintenance │
-        │ Transaction │  │ Service      │ │ Services    │
-        └─────────────┘  └──────┬───────┘ └─────────────┘
-                                │
-                                ▼ (JSON via stdin)
-                         ┌─────────────┐
-                         │ Python RF   │
-                         │ RUL Model   │
-                         └──────┬──────┘
-                                │ (Predictions + RUL + Risk)
-                                ▼
-                         React Dashboard
-                                │
-                  ┌─────────────┼─────────────┐
-                  ▼             ▼             ▼
-                Admin        Engineer     Technician
+┌───────────────────────────────┐
+│ Railway HVAC Simulation       │
+│ (Physics + Monte Carlo Env)   │
+└───────────────┬───────────────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│ Telemetry Streaming           │
+│ Direct HTTP / Kafka Broker    │
+└───────────────┬───────────────┘
+                │ (X-Telemetry-Key)
+                ▼
+┌───────────────────────────────┐
+│ Express API Ingestion         │
+│ (Range + Consistency Checks)  │
+└───────┬───────────────┬───────┘
+        │               │
+        ▼               ▼
+┌──────────────┐ ┌──────────────┐
+│  PostgreSQL  │ │ AI Inference │
+│  Database    │ │ (predict.py) │
+└───────┬──────┘ └──────┬───────┘
+        │               │
+        └───────┬───────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│ Express REST Services         │
+└───────────────┬───────────────┘
+                │ (Axios / Bearer JWT)
+                ▼
+┌───────────────────────────────┐
+│ React Frontend Application    │
+│ (Role-Specific Dashboards)    │
+└───────────────────────────────┘
 ```
 
 ### Architectural Responsibilities:
-- **`telemetryModel.js`**: Handles database persistence and transactional storage of incoming telemetry, initial health scores, threshold alert generation, and asset status synchronization.
-- **`aiPredictionService.js`**: Orchestrates the Machine Learning workflow. Retrieves recent telemetry, invokes the Python Random Forest inference engine via stdin/stdout, stores RUL predictions, synchronizes asset health, and generates prescriptive explainability advisories.
+- **`telemetryModel.js`**: Handles database persistence and transactional storage of incoming telemetry, rule-based alerts, active alert deduplication, and connection status tracking (`LIVE`, `STALE`, `OFFLINE`).
+- **`aiPredictionService.js`**: Orchestrates the Machine Learning workflow. Retrieves the latest 20 telemetry readings per asset, invokes the Python Random Forest inference engine via stdin/stdout, stores RUL predictions, synchronizes asset health, and generates prescriptive explainability advisories.
 - **`predict.py`**: Independent Python inference engine loading `rul_model.pkl`, executing 20-cycle rolling feature transformations, and predicting remaining useful life in hours and operational days.
+- **`PredictionsPage.jsx` / `AIPredictionsView.jsx`**: The dedicated AI prediction view in the client dashboard, providing fleet-wide RUL indicators, health conditions, degradation drivers, and one-click dispatch triggers.
 
 ---
 
 ## 4. The Ventrix Digital Twin Hierarchy
 
-In Ventrix, the **Digital Twin** is not merely a 3D visual animation; it represents the **digital operational state of the physical rolling stock HVAC asset**:
+In Ventrix, the **Digital Twin** is a **simulation-based digital representation linking trains, coaches, HVAC assets, live telemetry, and depot maintenance tickets**:
 
 ```
 Railway System (Indian Railways)
@@ -120,18 +133,28 @@ Degradation State (Compressor Wear, Motor Efficiency, Filter Restriction)
 AI Predicted RUL & Risk Level (CRITICAL / HIGH / MEDIUM / NOMINAL)
       ↓
 Depot Maintenance State (Open Work Orders, Assigned Technicians, Parts Issued)
+      ↓
+Maintenance History (Completed Inspections, Verified Telemetry, Replaced Parts)
 ```
 
 Through this hierarchy, platform users can inspect equipment condition and maintenance lifecycles at any level of granularity: whole fleet, specific train routes, coaches, or individual rooftop HVAC units.
 
 ---
 
-## 5. Physics-Informed HVAC Simulation & Degradation Engine
+## 5. Physics-Informed HVAC Simulation & Stochastic Engine
 
-The prototype utilizes physics-informed simulation to generate realistic railway operating data.
+The prototype utilizes physics-informed simulation combined with stochastic environment generation to model realistic degradation.
 
-### 5.1 Thermodynamic Equations
-The simulation models heat transfer and refrigeration physics every second:
+### 5.1 Stochastic Environment Generation (`MonteCarloEngine.js`)
+To ensure varied operational stress across units rather than a single repeated trajectory, `MonteCarloEngine.js` generates randomized operational parameters:
+- **Ambient Temperature**: $28^\circ	ext{C}$ to $45^\circ	ext{C}$
+- **Ambient Humidity**: $50\%$ to $90\%$
+- **Passenger Load**: $40$ to $320$ passengers
+- **Train Operating Speed**: $0$ to $110	ext{ km/h}$
+- **Supply Voltage**: $390	ext{ V}$ to $420	ext{ V}$ (3-phase 415V nominal)
+
+### 5.2 Thermodynamic Equations (`HVACPhysics.js`)
+The simulation models heat transfer and refrigeration physics:
 1. **Cabin Heat Load ($Q_{\text{load}}$)**:
    $$Q_{\text{load}} = Q_{\text{ambient}} + Q_{\text{passengers}} + Q_{\text{doors}} + Q_{\text{equipment}}$$
    where $Q_{\text{ambient}} = (T_{\text{ambient}} - 24^\circ\text{C}) \times 0.8$, $Q_{\text{passengers}} = N_{\text{passengers}} \times 0.12\text{ kW}$, and $Q_{\text{equipment}} = 2.5\text{ kW}$.
@@ -142,206 +165,234 @@ The simulation models heat transfer and refrigeration physics every second:
    $$P_{\text{electrical}} = \frac{Q_{\text{cooling}}}{\text{COP} \times \eta_{\text{motor}}} \times \left(1 + \frac{\text{CompressorWear}}{2}\right)$$
    $$I_{\text{compressor}} = \frac{P_{\text{electrical}} \times 1000}{\sqrt{3} \times V_{\text{supply}} \times \text{PF} \times \eta_{\text{motor}}}$$
 
-### 5.2 Mechanical Aging & Wear Engine (`HVACDegradation.js`)
+### 5.3 Mechanical Aging & Wear Engine (`HVACDegradation.js`)
 Operating hours accumulate under load stress:
 $$\text{Stress} = 0.4 + \text{CompressorLoad}$$
 $$\text{Wear}_{\text{compressor}}(t + \Delta t) = \text{Wear}_{\text{compressor}}(t) + \left(\frac{1}{\text{DesignLifeHours}}\right) \times \text{Stress} \times \Delta t$$
 $$\eta_{\text{compressor}} = \max(0.15, 1.0 - \text{Wear}_{\text{compressor}})$$
 $$\eta_{\text{motor}} = \max(0.50, 1.0 - \text{Wear}_{\text{motor}} \times 0.5)$$
 
-> **Data Authenticity Disclaimer**: The current prototype uses physics-based simulated telemetry to reproduce realistic degradation curves. The architecture is engineered with standard JSON REST/Kafka schemas so that simulated telemetry can be directly replaced or augmented by physical IoT edge gateways deployed on rolling stock.
+> **Data Authenticity Note**: Ventrix is trained and demonstrated using run-to-failure data generated from **80 simulated railway HVAC units with different degradation patterns and operating lifetimes**. Ventrix does **not** claim to be trained on real sensor logs from operational Vande Bharat, Rajdhani, or Shatabdi rakes. The architecture uses standard REST/Kafka schemas so physical IoT edge gateways can directly connect when available.
 
 ---
 
-## 6. Telemetry Ingestion & Streaming Pipeline
+## 6. Telemetry Ingestion, Validation & Server-Side Health Authority
 
-Ventrix supports two parallel streaming mechanisms:
+### 6.1 Telemetry Streaming Mechanisms
+1. **Direct HTTP Streamer (`stream_direct.js`)**: Advances simulated time and POSTs telemetry directly to `http://localhost:5000/api/telemetry` every 3 seconds with header `X-Telemetry-Key`.
+2. **Kafka Event Pipeline (`KafkaConsumer.js`)**: Simulation publishes to topic `simulation.telemetry`. A consumer bridge forwards messages to the Express API.
 
-1. **Direct HTTP Streamer (`stream_direct.js`)**:
-   - Lightweight, standalone Node.js process.
-   - Advances simulated time and POSTs telemetry directly to `http://localhost:5000/api/telemetry` every 3 seconds with header `X-Telemetry-Key`.
-2. **Kafka Event Pipeline (`KafkaConsumer.js`)**:
-   - Decoupled enterprise architecture.
-   - Simulation publishes to topic `simulation.telemetry`. A consumer bridge reads messages and forwards them to the Express API.
+### 6.2 Range & Consistency Validation
+The ingestion pipeline enforces **range validation + data consistency validation**:
+- **Physical Sensor Plausibility Bounds**:
+  - Supply Air Temp: $-30.0^\circ	ext{C}$ to $80.0^\circ	ext{C}$
+  - Refrigerant Pressure: $0.0	ext{ bar}$ to $40.0	ext{ bar}$
+  - Compressor Current: $0.0	ext{ A}$ to $120.0	ext{ A}$
+  - Filter DP: $0.0	ext{ Pa}$ to $5,000.0	ext{ Pa}$
+  - Power Consumption: $0.0	ext{ kW}$ to $250.0	ext{ kW}$
+  - Vibration: $0.0	ext{ mm/s}$ to $100.0	ext{ mm/s}$
+  - Operating Hours: $0	ext{ h}$ to $500,000	ext{ h}$
+- **Consistency Checks**:
+  - `assetId` must exist in active registry and match alphanumeric format.
+  - `timestamp` must be valid ISO 8601, not $> 24	ext{ hours}$ in the future, and not $> 60	ext{ days}$ in the past.
+  - Operating hours must be monotonically non-decreasing.
 
-### Ingestion Validation:
-The server validates all readings against strict physical plausibility bounds:
-- Supply Air Temp: $-30^\circ\text{C}$ to $80^\circ\text{C}$
-- Refrigerant Pressure: $0.0\text{ bar}$ to $40.0\text{ bar}$
-- Compressor Current: $0.0\text{ A}$ to $120.0\text{ A}$
-- Filter DP: $0\text{ Pa}$ to $5,000\text{ Pa}$
-- Operating Hours: $0\text{ h}$ to $500,000\text{ h}$
+### 6.3 Server-Side Health Authority
+> **Telemetry values received from the simulator are validated at the API boundary, while authoritative asset health and operational status are determined by the backend using telemetry, rule evaluation, and prediction results.**
+
+### 6.4 Telemetry Connection Status (`LIVE`, `STALE`, `OFFLINE`)
+An asset must not be shown as healthy simply because its last recorded reading hours ago was nominal. Ventrix evaluates communication freshness:
+```
+Telemetry received within last 30 seconds
+                ↓
+              LIVE
+
+No telemetry received for 30s to 5 minutes
+                ↓
+              STALE
+
+No communication received beyond 5 minutes
+                ↓
+             OFFLINE
+```
 
 ---
 
 ## 7. Machine Learning & RUL Prediction Deep Dive
 
-### 7.1 Run-to-Failure Simulation Methodology
-Training data is generated using a **run-to-failure simulation methodology inspired by standard predictive maintenance benchmarks**:
-- 60 to 80 simulated HVAC units are run across varied lifespans ($15,000\text{ h} - 25,000\text{ h}$) until health collapses to effective failure (health score $\le 6$).
-- **Ground-Truth RUL Labeling**:
-  $$\text{RUL}_{\text{ground\_truth}}(t) = t_{\text{failure}} - t$$
-- **Academic Distinction**: Ground-truth labels are only calculated during training. The live operational model **never** receives ground-truth RUL; it must infer RUL purely from instantaneous and rolling sensor features.
+### 7.1 Model Architecture & Evaluation
+- **Random Forest Regressor**: A Random Forest model with 150 decision trees is trained using run-to-failure data generated from 80 simulated HVAC units.
+- **Validation**: Evaluated using a **unit-level grouped train/test split**, with 80% of units (64 units) used for training and 20% unseen units (16 units) used for testing.
+- **Evaluation Performance**:
+  - **Mean Absolute Error (MAE)**: $pprox 42.5	ext{ hours}$
+  - **Coefficient of Determination ($R^2$)**: $0.940$
 
-### 7.2 Model Architecture & Feature Engineering
-- **Algorithm**: `RandomForestRegressor` (`n_estimators=150`, `max_depth=16`, `min_samples_leaf=5`, `random_state=42`).
-- **Feature Set**:
-  1. *Raw Sensors*: Operating hours, ambient temp, humidity, passenger count, speed, voltage, supply air temp, refrigerant pressure, compressor current, filter DP, power, wear metrics.
-  2. *20-Cycle Rolling Statistics*: Rolling mean ($\mu_{20}$), rolling standard deviation ($\sigma_{20}$), and rate of change ($\Delta x$) for supply air temperature, compressor current, filter DP, and electrical power.
-  3. *Thermodynamic Ratios*: Power efficiency ratio ($\frac{\text{Power}}{\text{CoolingCapacity} + 0.1}$) and health derivative trend.
-  4. *Categorical Features*: One-hot encoded `asset_state` and `health_status`.
-- **Validation**: Evaluated using a **unit-level grouped split** (80% training units, 20% unseen test units). This ensures the model is validated against equipment it has never encountered during training.
+### 7.2 Why 20-Cycle Rolling Features Are Used
+The model evaluates the **latest 20 telemetry readings per unit** to capture:
+1. **Recent Degradation Trends**: Rolling mean ($\mu_{20}$) smooths short-term noise.
+2. **Process Variability**: Rolling standard deviation ($\sigma_{20}$) detects mechanical flutter and unstable suction.
+3. **Rate of Degradation**: Instantaneous rate of change ($\Delta x$) captures how rapidly temperature or current is deteriorating.
 
-### 7.3 Unified RUL & Risk Classification Thresholds
-The entire platform is unified under the following standard risk thresholds:
+### 7.3 Independent RUL Risk vs. Health Condition Logic
 
-| Risk Category | RUL Threshold (Hours) | Health Score Equivalent | Required Action |
-|---|---|---|---|
-| **CRITICAL** | $< 150\text{ hours}$ | $< 40\%$ | Immediate depot inspection; urgent dispatch |
-| **HIGH** | $150\text{ h} - 500\text{ hours}$ | $40\% - 59.9\%$ | Service turnaround required within 72 hours |
-| **MEDIUM** | $500\text{ h} - 1000\text{ hours}$ | $60\% - 79.9\%$ | Routine depot monitoring; filter & coil inspection |
-| **NOMINAL** | $\ge 1000\text{ hours}$ | $\ge 80\%$ | Optimal performance; standard scheduled cycle |
+RUL Risk and Health Condition are **two independent indicators**:
+> **RUL Risk represents the predicted remaining operating life of the HVAC unit, while Health Condition represents its current operating condition based on the health score.**
 
-### 7.4 Model Explainability
-Rather than returning an opaque RUL number, `aiPredictionService.js` derives explainable diagnostic drivers:
-- **Filter DP Elevation**: Flags filter restriction above nominal thresholds (e.g. $> 250\text{ Pa}$).
-- **Compressor Current Overdraw**: Identifies elevated current due to mechanical bearing wear.
-- **Thermal Lag**: Detects supply air temperature rising above setpoint.
-- **Refrigerant Drop**: Detects subcooling pressure loss indicating micro-leaks.
+| Predicted RUL | Health Score | Operational Meaning |
+|---|---|---|
+| $1,600	ext{ h}$ | $94\%$ | **NOMINAL + Healthy** (Optimal condition, long life remaining) |
+| $700	ext{ h}$ | $82\%$ | **MEDIUM + Good** (Normal wear, turnaround within standard window) |
+| $400	ext{ h}$ | $70\%$ | **HIGH + Warning** (Noticeable degradation; turnaround needed within 72h) |
+| $100	ext{ h}$ | $55\%$ | **CRITICAL + Maintenance Required** (Urgent repair needed despite moderate health) |
+
+#### Primary AI Risk Classification (Driven by RUL)
+| Risk Level | RUL Threshold | Action Required |
+|---|---|---|
+| **CRITICAL** | $< 150	ext{ hours}$ | Immediate depot inspection; urgent technician dispatch |
+| **HIGH** | $150	ext{ h} - 500	ext{ hours}$ | Service turnaround required within 72 hours |
+| **MEDIUM** | $500	ext{ h} - 1000	ext{ hours}$ | Routine monitoring; inspect at next turnaround |
+| **NOMINAL** | $\ge 1000	ext{ hours}$ | Optimal performance; standard scheduled cycle |
+
+#### Health Condition Classification (Driven by Health Score)
+| Health Score | Condition Status | Engineering Interpretation |
+|---|---|---|
+| $\ge 90\%$ | **Healthy** | Optimal operating parameters across all sensors |
+| $75\% - 89.9\%$ | **Good** | Normal operational wear within acceptable limits |
+| $60\% - 74.9\%$ | **Warning** | Elevated filter DP, motor resistance, or thermal lag |
+| $40\% - 59.9\%$ | **Maintenance Required** | Significant component degradation; schedule servicing |
+| $< 40\%$ | **Critical** | Severe thermodynamic or mechanical degradation |
+
+> **Operational Threshold Clarification**: 75% is the minimum acceptable operational threshold for returning an asset to service, while 90% is the threshold for the "Healthy" condition category (75–89.9% is categorized as "Good"). Therefore, an asset with 78% health is in "Good" condition and is safely restorable to OPERATIONAL.
+
+### 7.4 Safe Model Explainability
+- **Observed Condition**: Filter DP elevated ($> 280	ext{ Pa}$).
+  - *Interpretation*: Elevated filter restriction.
+  - *Recommendation*: Inspect/replace return-air filter.
+- **Observed Condition**: Compressor current elevated ($> 18.0	ext{ A}$).
+  - *Interpretation*: Elevated compressor current is consistent with increased compressor mechanical wear.
+  - *Recommendation*: Inspect compressor electrical windings and bearing lubrication.
 
 ---
 
 ## 8. Complete Maintenance Management Lifecycle
 
-### 8.1 Maintenance Decision Flow
-```
-Telemetry Anomaly / Alert / Low RUL
-               ↓
-    Engineer Evaluates Urgency
-               ↓
-    Creates Work Order (Priority, Type, Duration)
-               ↓
-    Assigns Field Technician
-```
-*AI does not autonomously create work orders; AI provides predictive intelligence to support the Engineer's operational decision.*
+### 8.1 The Three Maintenance Triggers
+Ventrix explicitly integrates:
+1. **Preventive Maintenance**: Scheduled depot plans in `maintenance_schedules` based on calendar intervals or design operating hours.
+2. **Condition-Based Maintenance**: Immediate alarms triggered when real-time telemetry breaches configured operational thresholds.
+3. **Predictive Maintenance**: Early warnings triggered when Random Forest RUL forecasts drop into `HIGH` or `CRITICAL` risk horizons.
 
-### 8.2 Work Order State Machine
+### 8.2 Service Request Triage Flow
+> **Engineers review incoming requests and either resolve trivial or duplicate requests or convert confirmed defects into Work Orders with linked references.**
 
 ```
-              ┌─────────┐
-              │  OPEN   │
-              └────┬────┘
-                   │ Assign Technician
-                   ▼
-              ┌─────────┐
-              │ASSIGNED │
-              └────┬────┘
-                   │ Technician Accepts
-                   ▼
-              ┌─────────┐
-              │ACCEPTED │
-              └────┬────┘
-                   │ Start Physical Work
-                   ▼
-        ┌───────────────────┐
-        │    IN_PROGRESS    │
-        └───────┬─────┬─────┘
-   Parts Needed │     │ No Parts Needed
-                ▼     │
-      ┌──────────────────┐ │
-      │WAITING_FOR_PARTS │ │
-      └─────────┬────────┘ │
-   Parts Issued │          │
-                ▼          │
-        ┌──────────────┐   │
-        │ PARTS_ISSUED │   │
-        └───────┬──────┘   │
-                │ Work Resumes
-                ▼          │
-        ┌──────────────────┐
-        │    COMPLETED     │◄─┘
-        └───────┬──────────┘
-                │ Submit Completion Report
-                ▼
-        ┌────────────────────┐
-        │ UNDER_VERIFICATION │
-        └───────┬────────────┘
-                │ Engineer Signs Off
-                ▼
-        ┌────────────────────┐
-        │      CLOSED        │
-        └────────────────────┘
-```
-
----
-
-## 9. Service Requests Module
-
-The **Service Requests** module bridges informal on-train observations with depot engineering:
-
-```
-Technician/Crew reports issue on Coach HVAC
+Technician Submits Service Request (Status: OPEN)
                     ↓
-   Service Request created (Status: OPEN)
-                    ↓
-       Engineer Reviews Request
-        ┌───────────┴───────────┐
-        │                       │
+        Engineer Triage & Review
+         ┌───────────┴───────────┐
+         │                       │
  Maintenance Required?     False Alarm / Trivial?
-        │                       │
-        ▼                       ▼
-Create Work Order         Mark as RESOLVED / CLOSED
+         │                       │
+         ▼                       ▼
+Convert to Work Order     Mark as RESOLVED / CLOSED
 (Linked via work_order_id)
 ```
 
-- **Database Table**: `service_requests` (`id`, `organization_id`, `asset_id`, `created_by`, `title`, `description`, `priority`, `status`, `work_order_id`, `resolved_at`).
-- **Endpoints**: `GET /api/service-requests`, `POST /api/service-requests`, `PATCH /api/service-requests/:id/status`.
-- **Frontend Page**: [ServiceRequestsPage.jsx](file:///c:/Users/ASUS/Documents/Projects/HVAC%20RUL/HVAC%20RUL/Ventrix/client/src/pages/dashboard/components/ServiceRequestsPage.jsx) allows submitting requests, viewing status, and escalating to maintenance work orders.
+### 8.3 Work Order Duplicate Protection & Technician Capacity Check
+1. **Duplicate Active Work Order Prevention**:
+   Before creating a work order, the server verifies that no active ticket (`status NOT IN ('CLOSED', 'CANCELLED')`) already exists on that asset for the same alert or issue title:
+   ```sql
+   SELECT id FROM work_orders
+   WHERE asset_id = $1 AND status NOT IN ('CLOSED', 'CANCELLED')
+     AND (alert_id = $2 OR LOWER(title) = LOWER($3))
+   ```
+2. **Technician Workload Conflict Validation**:
+   Checks whether the assigned technician currently has $\ge 3$ active jobs (`ASSIGNED`, `ACCEPTED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`). If so, assignment is blocked unless explicitly overridden.
+
+### 8.4 Work Order State Machine
+
+```
+OPEN
+  ↓ (Assign Technician)
+ASSIGNED
+  ↓ (Technician Accepts)
+ACCEPTED
+  ↓ (Start Physical Work)
+IN_PROGRESS
+  ├──→ COMPLETED (No parts required)
+  │
+  └──→ WAITING_FOR_PARTS
+            ↓ (Admin Issues Stock)
+      PARTS_ISSUED
+            ↓ (Work Resumes)
+       IN_PROGRESS
+            ↓ (Submit Findings & Report)
+        COMPLETED
+            ↓ (Engineer Verification)
+   UNDER_VERIFICATION
+            ↓
+  Post-Maintenance Telemetry Re-check
+    ┌───────────────┴───────────────┐
+    │                               │
+  PASS                            FAIL
+    │                               │
+    ▼                               ▼
+Restored to OPERATIONAL      Remains WARNING / MAINTENANCE
+    │                               │
+    ▼                               ▼
+Work Order CLOSED            Work Order CLOSED /
+    │                        Follow-up Ticket Created
+    ▼                               │
+Maintenance History Updated ◄───────┘
+```
+*(Work orders may also transition to `CANCELLED` if rejected or cancelled prior to physical execution).*
+
+> **Work Order Closure Logic**: Work order closure records completion of the assigned physical maintenance activity. The asset is restored to `OPERATIONAL` only if post-maintenance telemetry confirms health $\ge 75\%$, physical parameters are nominal, and no other unresolved tickets remain on that unit. If post-repair telemetry shows lingering issues or secondary tickets remain open, the asset status remains `WARNING` or `MAINTENANCE`.
 
 ---
 
-## 10. Spare Parts & Auditable Inventory Management
+## 9. Spare Parts & Auditable Inventory Management
 
-### 10.1 Role-Segregated Part Requisition Flow
-Technicians cannot arbitrarily deduct warehouse stock. They must submit requisitions:
-1. **Technician Requisitions Part**: Selects part code, quantity, urgency, and associated work order ID (`part_requests` status: `PENDING`).
-2. **Engineer Approves Requisition**: Evaluates request feasibility. Upon approval, status changes to `APPROVED`.
-3. **Warehouse / Admin Issues Stock**: Physically dispenses parts. Status becomes `ISSUED`, stock in `inventory` is decremented, and an auditable entry in `stock_transactions` is created.
+### 9.1 Three-Role Part Requisition Flow
+1. **Technician Requisitions Part**: Selects part code, quantity, and work order (`part_requests` status: `PENDING`).
+2. **Engineer Approves Requisition**: Evaluates technical justification; updates status to `APPROVED`.
+3. **Admin Issues Warehouse Stock**: As part of **Admin — Inventory/Warehouse Operations**, the Administrator executes stock issuance. Status becomes `ISSUED`, quantity in `inventory` decrements, consumed components are recorded in `work_order_parts`, and an entry is logged in the auditable stock ledger.
 
-### 10.2 Auditable Stock Transactions (`stock_transactions`)
-Every inventory adjustment is permanently audited:
-- `transaction_type`: `RECEIVED` (from vendor), `ISSUED` (for work order), `DAMAGED` (scrapped), `AUDIT_CORRECTION` (cycle count).
-- Records `user_id`, `part_id`, signed `quantity`, `reference_type` (`work_order`, `purchase_order`, `manual`), and `reason`.
+### 9.2 Auditable Stock Ledger (`stock_transactions`)
+Every stock change creates an auditable transaction in `stock_transactions`, recording:
+- `user_id`: Administrator executing the change
+- `part_id`: Spare part modified
+- `transaction_type`: `RECEIVED` (vendor replenishment), `PART_ISSUE` (consumed on work order), `DAMAGED` (scrapped), `ADJUSTED` (cycle count audit)
+- `quantity`: Signed integer (+10 received, -1 issued)
+- `reference_type` and `reference_id`: Associated work order or purchase order
+- `reason`: Mandatory text audit justification
 
----
-
-## 11. Alerts & Health Management
-
-Ventrix categorizes alerts by source:
-1. **Rule-Based Sensor Alerts (`source: 'rule'`)**: Triggered immediately when sensor readings cross physical safety bounds (e.g. Refrigerant pressure $< 4.0\text{ bar}$, Filter $\Delta P > 300\text{ Pa}$, Temperature $> 26^\circ\text{C}$).
-2. **AI Predictive Alerts (`source: 'ai'`)**: Generated when predicted RUL drops below $150\text{ hours}$ even before physical sensor thresholds trigger alarms.
-
-### Alert Lifecycle:
-- **Acknowledgement**: The engineer acknowledges the alert (`is_acknowledged = TRUE`, `acknowledged_by`, `acknowledged_at`), signifying investigation has begun.
-- **Escalation / Resolution**: The engineer either resolves the alert directly or escalates it to a Work Order (`work_order_id` linked).
+### 9.3 `part_requests` vs. `work_order_parts` (`wo_parts`)
+- **`part_requests`**: Tracks the technician request and engineering approval workflow.
+- **`work_order_parts` (`wo_parts`)**: Records the actual parts issued from the warehouse and consumed against a work order during repair execution.
 
 ---
 
-## 12. Security & RBAC Architecture
+## 10. Configured Operational Thresholds & Alert Management
 
-1. **Authentication**: JWT (JSON Web Tokens) with HMAC-SHA256 signatures; passwords hashed using `bcrypt` (10 salt rounds).
-2. **Dynamic Database RBAC**:
-   - Permissions stored in table `permissions` and mapped to roles in `role_permissions`.
-   - Backend middleware (`requirePermission`) queries the database dynamically with fallback defaults.
-3. **Service Ingestion Security**:
-   - Streaming endpoint (`POST /api/telemetry`) is protected via `X-Telemetry-Key` validation, isolated from user session cookies.
-4. **Data Protection**:
-   - Parameterized SQL queries (`pg` pool) across all endpoints preventing SQL injection.
-   - Input sanitization and physical numerical bounding on telemetry ingestion.
+The operational limits used in Ventrix represent **configured operational thresholds used by the Ventrix simulation and prototype environment**:
+- **Refrigerant Suction Pressure**: $< 3.8	ext{ bar}$ (Critical: risk of coil freeze-up or leak)
+- **Supply Air Temperature**: $> 25.5^\circ	ext{C}$ (Warning: cooling capacity degradation)
+- **Filter Differential Pressure**: $> 280.0	ext{ Pa}$ (Warning: return air restriction)
+- **Compressor Current**: $> 18.0	ext{ A}$ (Warning: motor/mechanical resistance)
+
+### Active Alert Deduplication
+To prevent flooding the engineer with duplicate alerts every 3 seconds while degradation continues, the database enforces active alert deduplication:
+```sql
+WHERE NOT EXISTS (
+  SELECT 1 FROM alerts
+  WHERE asset_id = $1 AND title = $title AND source = $source AND is_resolved = FALSE
+)
+```
 
 ---
 
-## 13. Complete Relational Database Architecture
+## 11. Relational Database Schema & Domain Model
 
 ```
                   ┌──────────────────────┐
@@ -383,7 +434,7 @@ Ventrix categorizes alerts by source:
          ├───────────────────────┬────────────────────────┐         │
          ▼                       ▼                        ▼         │
   ┌──────────────┐        ┌─────────────┐          ┌─────────────┐  │
-  │  wo_parts    │        │part_requests│          │    users    │──┘
+  │work_ord_parts│        │part_requests│          │    users    │──┘
   └──────────────┘        └──────┬──────┘          └──────┬──────┘
                                  │                        │
                           ┌──────▼──────┐          ┌──────▼──────┐
@@ -401,117 +452,83 @@ Ventrix categorizes alerts by source:
 
 ---
 
-## 14. Domain Model Class Structure
+## 12. Final Master Architecture Flowchart
 
 ```
-+---------------------------------------------------------------------------------+
-|                                 DOMIAN MODEL                                    |
-+---------------------------------------------------------------------------------+
-| User              : id, name, email, role_id, is_active, last_login             |
-| Role              : id, name, description                                       |
-| Permission        : id, permission_key, label, category, description            |
-| Organization      : id, name, code, contact_email                               |
-| Project           : id, project_code, name, status                              |
-| Train             : id, train_number, train_name, status                        |
-| Coach             : id, coach_number, coach_type, status                        |
-| HVACAsset         : id, asset_code, name, status, install_date, health_score    |
-| Telemetry         : id, asset_id, recorded_at, temp, pressure, current, filterDP|
-| RULPrediction     : id, asset_id, rul_hours, risk_level, model_version          |
-| Alert             : id, asset_id, level, title, source, is_resolved, is_ack     |
-| ServiceRequest    : id, asset_id, created_by, title, priority, status, wo_id    |
-| MaintenanceSched  : id, asset_id, scheduled_date, maintenance_type, template    |
-| WorkOrder         : id, asset_id, title, priority, status, assigned_to, report  |
-| Part              : id, part_code, name, unit, minimum_stock, unit_price        |
-| Inventory         : id, part_id, location, quantity                             |
-| PartRequest       : id, part_id, work_order_id, requested_by, quantity, status  |
-| StockTransaction  : id, part_id, transaction_type, quantity, user_id, reason    |
-+---------------------------------------------------------------------------------+
+                 VENTRIX
+                    │
+       ┌────────────┴────────────┐
+       │                         │
+ HVAC SIMULATION             USER PLATFORM
+       │                         │
+       ▼                         ▼
+ LIVE TELEMETRY             React Frontend
+       │                   Admin / Engineer /
+       ▼                      Technician
+ Express API
+       │
+ ┌─────┴──────────┐
+ │                │
+ ▼                ▼
+PostgreSQL      AI / RUL
+ │                │
+ │          Random Forest
+ │                │
+ └───────┬────────┘
+         ▼
+  HEALTH + ALERTS
+         │
+         ▼
+  ENGINEER DECISION
+         │
+ ┌───────┼────────┐
+ │       │        │
+ ▼       ▼        ▼
+Scheduled Rule   AI/RUL
+Maintenance Alert Prediction
+ │       │        │
+ └───────┼────────┘
+         ▼
+     WORK ORDER
+         │
+         ▼
+     TECHNICIAN
+         │
+         ▼
+    PART REQUEST
+         │
+         ▼
+  ENGINEER APPROVAL
+         │
+         ▼
+   ADMIN ISSUANCE
+         │
+         ▼
+    REPAIR + TEST
+         │
+         ▼
+ FIELD MEASUREMENTS
+         │
+         ▼
+ ENGINEER VERIFICATION
+         │
+         ▼
+ POST-MAINTENANCE
+ TELEMETRY CHECK
+         │
+         ▼
+ ASSET RE-EVALUATION
+         │
+         ▼
+ MAINTENANCE HISTORY
 ```
 
 ---
 
-## 15. REST API Architecture
+## 13. Academic & Industrial Limitations
 
-| Endpoint Group | Method & Route | Access Level | Description |
-|---|---|---|---|
-| **Auth** | `POST /api/auth/login` | Public | Authenticates credentials, returns JWT token & role permissions |
-| **Telemetry** | `POST /api/telemetry` | Service Key | Ingestion endpoint for live sensor stream packets |
-| | `GET /api/telemetry/latest` | `telemetry.view` | Latest reading per active HVAC asset |
-| | `GET /api/telemetry/:code/history` | `telemetry.view` | Time-series historical data for Recharts waveforms |
-| | `GET /api/telemetry/predictions/latest` | `telemetry.view` | Newest AI RUL predictions with explainability drivers |
-| | `POST /api/telemetry/predictions/run` | `telemetry.view` | Triggers on-demand Random Forest inference pipeline |
-| **Assets** | `GET /api/assets` | `assets.view` | Retrieves HVAC asset registry with filterable specs |
-| | `POST /api/assets` | `assets.manage` | Registers new HVAC unit with coach/train linkage |
-| | `PUT /api/assets/:code` | `assets.manage` | Updates asset specification or operational status |
-| **Maintenance** | `GET /api/maintenance/work-orders` | `maintenance.view` | Lists work orders with status and technician filters |
-| | `POST /api/maintenance/work-orders` | `maintenance.manage`| Creates & dispatches work orders to technicians |
-| | `PATCH /api/maintenance/work-orders/:id/status` | `maintenance.manage`| Updates ticket status (e.g., ACCEPTED, IN_PROGRESS) |
-| | `POST /api/maintenance/work-orders/:id/report` | `maintenance.manage`| Submits technician completion report & sensor findings |
-| | `POST /api/maintenance/work-orders/:id/verify` | `maintenance.verify`| Engineer verification & official ticket closure |
-| **Service Requests** | `GET /api/service-requests` | `service_requests.view` | Retrieves service requests |
-| | `POST /api/service-requests` | `service_requests.create` | Submits field observation ticket |
-| | `PATCH /api/service-requests/:id/status` | `service_requests.manage` | Updates status or links escalated work order |
-| **Inventory** | `GET /api/inventory/parts` | `inventory.view` | Retrieves spare parts catalog and stock levels |
-| | `POST /api/inventory/adjust` | `inventory.manage` | Auditable stock adjustment (RECEIVED, DAMAGED) |
-| | `POST /api/inventory/requests` | `parts.request` | Submits spare part requisition for work order |
-| | `PATCH /api/inventory/requests/:id/approve` | `inventory.manage` | Engineer/Admin approves part requisition |
-| | `PATCH /api/inventory/requests/:id/issue` | `parts.issue` | Dispenses stock from warehouse & records transaction |
-| **Users & Roles** | `GET /api/users` | `users.manage` | Lists platform staff and assigned roles |
-| | `POST /api/users` | `users.manage` | Creates platform user |
-| | `GET /api/roles/matrix` | `settings.manage` | Retrieves role-to-permission mapping |
-| | `PUT /api/roles/permissions` | `settings.manage` | Real-time toggle of RBAC permissions |
-
----
-
-## 16. What Each User Sees in Their Dashboard
-
-### 16.1 Administrator Dashboard (`admin@ventrix.com`)
-- **Executive KPI Cards**: Total Fleet Assets (Nominal/Warning/Fault breakdown), Fleet Health Index %, Active Fault Alerts, Active Work Orders (Open/In Progress/Closed), Low-Stock Spare Parts.
-- **Attention Notification Strip**: Real-time warning showing critical parts at or below minimum threshold with quick "Review Stock & Reorder" action.
-- **Operations Pipeline**: Horizontal progress bars tracking work order distribution across Open, Assigned, In Progress, and Completed.
-- **Technician Capacity Tracker**: Registered technicians, active jobs count, and completed ticket throughput.
-- **Live Fleet Radar**: Real-time sensor preview cards for units `HVAC-001` through `HVAC-005` displaying status badge, health %, supply temp, and pressure.
-- **Full Navigation Access**: Overview Dashboard, Live Telemetry, AI Predictions, Alerts & Anomalies, HVAC Asset Registry, Maintenance & Work Orders, Service Requests, Spare Parts & Stock, Users & Access, and Role Permissions Matrix.
-
-### 16.2 Maintenance Engineer Dashboard (`engineer@ventrix.com`)
-- **Supervisor Operational KPIs**: Pending Acceptance, Work In Progress, Awaiting Sign-Off, Units Needing Attention.
-- **Engineering Verification & Sign-Off Queue**: Inspects physical technician completion reports and post-fix sensor readings; provides formal sign-off to close work orders.
-- **Spare Part Requisitions Queue**: Inspects pending technician component requests; one-click "Quick Approve" authorizes warehouse stock deduction.
-- **Active Fault Radar with Quick Dispatch**: Incoming anomalies with one-click "Dispatch Tech" that pre-fills work order modals with asset code, issue description, and technician assignment.
-- **Navigation Access**: Overview Dashboard, Live Telemetry, AI Predictions, Alerts & Faults, HVAC Asset Registry, Maintenance & Work Orders, Service Requests, and Spare Parts & Stock. *(User provisioning and system configuration are restricted).*
-
-### 16.3 Field Technician Dashboard (`tech@ventrix.com`)
-- **Personal Job Status KPIs**: My Assigned Jobs, Pending Acceptance, In Progress, Under Verification / Closed.
-- **Urgent Job Hero Card**: Spotlights highest priority ticket with 5-stage progress indicator:
-  - `Accept Assignment` $\rightarrow$ `Start Physical Work` $\rightarrow$ `Request Spare Parts` $\rightarrow$ `Record Field Finding` $\rightarrow$ `Submit Completion Report`.
-- **Field Finding Modal**: Input on-site measurements (temperature delta post-service, vibration level, refrigerant head pressure).
-- **Completion Report Modal**: Submit summary of physical repair actions taken, handing off ticket to the Engineer.
-- **Spare Part Requisition Modal**: Request components from depot warehouse with quantity, urgency, and reason.
-- **Report Unscheduled Fault Modal**: Report unexpected defects found on site directly into the system.
-- **Navigation Access**: My Field Dashboard, My Work Orders, Service Requests, and Spare Parts Catalog. *(Diagnostic telemetry, asset registration, and administrative controls are hidden to maintain focus on field execution).*
-
----
-
-## 17. Error Handling & System Resilience
-
-1. **Telemetry Bounds Validation**: If incoming sensor data falls outside physical plausibility ranges, the packet is rejected with HTTP 400 and validation errors logged without polluting database tables.
-2. **AI Model Subprocess Resilience**: If Python executable or `rul_model.pkl` is missing, `aiPredictionService.js` catches the error and executes a physics-informed degradation heuristic so platform operations and RUL estimations are never halted.
-3. **Database Transaction Rollback**: All multi-step operations (e.g. telemetry ingestion + alerts + prediction sync; or inventory stock issuance + transaction audit) run inside PostgreSQL transactions (`BEGIN ... COMMIT / ROLLBACK`). If any sub-query fails, changes are cleanly reverted.
-
----
-
-## 18. Academic & Industrial Limitations
-
-1. **Simulation-Based Telemetry**: The current prototype uses physics-based simulated telemetry rather than physical sensors mounted on operational trains.
-2. **Model Validation Scope**: The Random Forest model is trained and tested on simulated degradation lifecycles; it has not yet been validated against multi-year real railway depot failure logs.
-3. **Environmental Noise**: Real railway operations feature harsh ambient vibrations, dust fouling, and track shocks that require edge filtering prior to platform ingestion.
-4. **Fleet Scale**: The current demonstration is configured for depot-scale rolling stock; production deployment across a national rail network would require distributed time-series databases (e.g. TimescaleDB) and Flink stream processors.
-
----
-
-## 19. Future Roadmap & Production Enhancements
-
-1. **Deep Learning Sequence Models**: Benchmark Temporal Convolutional Networks (TCN), LSTMs, and Transformers against the current Random Forest regressor for long-horizon degradation forecasting.
-2. **IoT Edge Gateway Integration**: Deploy MQTT / OPC-UA edge collectors on train coaches communicating via 4G/5G rail telemetry networks.
-3. **Automated Maintenance Scheduling**: Integrate integer linear programming (ILP) to optimize technician shift allocation and depot bay scheduling based on train timetables.
-4. **Supply Chain Auto-Replenishment**: Automated purchase order generation when spare parts stock falls below critical thresholds.
+1. **Simulated Telemetry Environment**: The current prototype uses physics-informed simulated telemetry rather than physical hardware sensors deployed on operational rolling stock.
+2. **Simulation-Trained ML Model**: The Random Forest RUL model is trained and evaluated using run-to-failure degradation data generated from 80 simulated HVAC units with diverse operating lifetimes; real railway sensor data is not currently used for model validation.
+3. **Prototype Fleet Scale**: The prototype demonstrates condition monitoring and depot logistics across 5 simulated rooftop HVAC units (`HVAC-001` through `HVAC-005`).
+4. **Subprocess Inference Model**: For the academic prototype, the Python inference engine is invoked as a subprocess via standard input/output. In a high-concurrency production system, this would be deployed as a persistent microservice (e.g., FastAPI / gRPC).
+5. **Environmental Noise & Track Shocks**: Real rolling stock operations feature harsh ambient vibrations, dust fouling, and track shocks that require edge filtering and sensor calibration prior to ingestion.

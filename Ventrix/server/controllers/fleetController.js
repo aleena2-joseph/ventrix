@@ -40,19 +40,11 @@ function computeCoachHealth(hvacUnits = []) {
 // Full Fleet -> Trains -> Coaches -> HVAC Units hierarchy
 const getFleetHierarchy = async (req, res) => {
   try {
-    const orgId = isCustomerRole(req.user.role) ? req.user.organizationId : (req.query.organizationId || null);
-
-    // 1. Fetch trains with their project info
+    // 1. Fetch trains
     const trainRows = await pool.query(
-      `SELECT t.id, t.train_number, t.train_name, t.status,
-              p.id AS project_id, p.name AS project_name, p.project_code,
-              o.id AS organization_id, o.name AS organization_name
+      `SELECT t.id, t.train_number, t.train_name, t.status
        FROM trains t
-       JOIN projects p ON t.project_id = p.id
-       JOIN organizations o ON p.organization_id = o.id
-       WHERE ($1::int IS NULL OR o.id = $1)
-       ORDER BY t.train_number ASC`,
-      [orgId]
+       ORDER BY t.train_number ASC`
     );
 
     if (trainRows.rows.length === 0) {
@@ -76,14 +68,12 @@ const getFleetHierarchy = async (req, res) => {
     const assetRows = coachIds.length > 0 ? await pool.query(
       `SELECT a.id, a.asset_code, a.name, a.zone, a.status, a.coach_id,
               a.serial_number, a.install_date,
-              pr.product_code, pr.name AS product_name,
               p.rul_hours, p.health_score, p.risk_level,
               t.temperature, t.pressure, t.current, t.voltage, t.humidity, t.power, t.vibration,
               t.recorded_at,
               COALESCE(al.alert_count, 0)::int AS active_alerts_count,
               COALESCE(wo.wo_count, 0)::int AS open_work_orders_count
        FROM assets a
-       LEFT JOIN products pr ON a.product_id = pr.id
        LEFT JOIN LATERAL (
          SELECT rul_hours, health_score, risk_level
          FROM predictions pred

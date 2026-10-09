@@ -3,22 +3,15 @@ const pool = require("../config/db");
 const userModel = require("../models/userModel");
 const { isCustomerRole } = require("../middleware/roles");
 
-// GET /api/users — Supports filtering by search, roleId, organizationId, status
+// GET /api/users — Supports filtering by search, roleId, status
 const getUsers = async (req, res) => {
   try {
-    const { search, roleId, organizationId, status } = req.query;
+    const { search, roleId, status } = req.query;
     const filters = {};
 
     if (search) filters.search = search.trim();
     if (roleId) filters.roleId = Number(roleId);
     if (status) filters.status = status.toUpperCase();
-
-    if (isCustomerRole(req.user.role)) {
-      // Customer roles can only ever see their own organization's users
-      filters.organizationId = req.user.organizationId;
-    } else if (organizationId) {
-      filters.organizationId = Number(organizationId);
-    }
 
     const rows = await userModel.getAllUsers(filters);
     res.status(200).json({ success: true, data: rows });
@@ -41,10 +34,6 @@ const getUserById = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    if (isCustomerRole(req.user.role) && user.organization_id !== req.user.organizationId) {
-      return res.status(403).json({ success: false, message: "Access denied to user in another organization" });
-    }
-
     res.status(200).json({ success: true, data: user });
   } catch (error) {
     console.error("❌ Failed to fetch user:", error.message);
@@ -57,7 +46,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // POST /api/users — Create a user
 const createUser = async (req, res) => {
   try {
-    const { name, email, password, organizationId, roleId } = req.body;
+    const { name, email, password, roleId } = req.body;
     const trimmedName = typeof name === "string" ? name.trim() : "";
     const trimmedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
@@ -77,7 +66,6 @@ const createUser = async (req, res) => {
       return res.status(400).json({ success: false, message: "Password must be at least 6 characters long" });
     }
 
-    let targetOrgId = organizationId ? Number(organizationId) : null;
     const targetRoleId = Number(roleId);
 
     // Verify role exists
@@ -87,34 +75,17 @@ const createUser = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid role specified" });
     }
 
-    if (isCustomerRole(req.user.role)) {
-      targetOrgId = req.user.organizationId;
-      if (!isCustomerRole(roleRow.name)) {
-        return res.status(403).json({
-          success: false,
-          message: "Customer admins can only create CUSTOMER_ADMIN or CUSTOMER_USER accounts",
-        });
-      }
-    } else {
-      // If Ventrix admin doesn't supply orgId, default to Ventrix org (manufacturer)
-      if (!targetOrgId) {
-        const vtxOrg = await pool.query("SELECT id FROM organizations WHERE type = 'MANUFACTURER' LIMIT 1");
-        targetOrgId = vtxOrg.rows[0]?.id || null;
-      }
-    }
-
     const existing = await userModel.findUserByEmail(trimmedEmail);
     if (existing) {
       return res.status(400).json({ success: false, message: "A user with this email already exists" });
     }
 
     const hashed = await bcrypt.hash(password, 10);
-    const user = await userModel.createUser(trimmedName, trimmedEmail, hashed, targetOrgId, targetRoleId);
+    const user = await userModel.createUser(trimmedName, trimmedEmail, hashed, targetRoleId);
 
     const auditModel = require("../models/auditModel");
     await auditModel.logAction({
       userId: req.user.id,
-      organizationId: req.user.organizationId,
       action: "USER_CREATED",
       entityType: "USER",
       entityId: user.id,

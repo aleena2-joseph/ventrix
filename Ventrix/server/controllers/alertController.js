@@ -2,11 +2,9 @@ const pool = require("../config/db");
 const { isCustomerRole } = require("../middleware/roles");
 const auditModel = require("../models/auditModel");
 
-// GET /api/alerts — org-scoped for customer roles; optional
-// ?resolved=true|false filter for everyone.
+// GET /api/alerts — optional ?resolved=true|false filter
 const getAlerts = async (req, res) => {
   try {
-    const orgId = isCustomerRole(req.user.role) ? req.user.organizationId : (req.query.organizationId || null);
     const resolvedFilter = req.query.resolved === undefined ? null : req.query.resolved === "true";
 
     const result = await pool.query(
@@ -19,12 +17,10 @@ const getAlerts = async (req, res) => {
        LEFT JOIN work_orders wo ON al.work_order_id = wo.id
        LEFT JOIN coaches c ON a.coach_id = c.id
        LEFT JOIN trains t ON c.train_id = t.id
-       LEFT JOIN projects pj ON t.project_id = pj.id
-       WHERE ($1::int IS NULL OR pj.organization_id = $1)
-         AND ($2::boolean IS NULL OR al.is_resolved = $2)
+       WHERE ($1::boolean IS NULL OR al.is_resolved = $1)
        ORDER BY al.created_at DESC
        LIMIT 200`,
-      [orgId, resolvedFilter]
+      [resolvedFilter]
     );
     res.status(200).json({ success: true, data: result.rows });
   } catch (error) {

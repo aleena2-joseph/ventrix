@@ -219,19 +219,36 @@ if __name__ == "__main__":
             rul = float(row.get("predicted_rul", 0.0))
             health = float(row.get("health_score", 100.0)) if pd.notnull(row.get("health_score")) else 100.0
             
-            # Determine unified risk category
-            # CRITICAL: < 150h or health < 40%
-            # HIGH: 150h-500h or health < 60%
-            # MEDIUM: 500h-1000h or health < 80%
-            # NOMINAL: >= 1000h and health >= 80%
-            if rul < 150 or health < 40:
+            # Primary AI Risk Classification based strictly on RUL (hours)
+            # CRITICAL: < 150h (Immediate inspection required)
+            # HIGH:     150h–500h (Maintenance within 72h)
+            # MEDIUM:   500h–1000h (Increased monitoring)
+            # NOMINAL:  >= 1000h (Normal operation)
+            if rul < 150:
                 risk = "CRITICAL"
-            elif rul < 500 or health < 60:
+            elif rul < 500:
                 risk = "HIGH"
-            elif rul < 1000 or health < 80:
+            elif rul < 1000:
                 risk = "MEDIUM"
             else:
                 risk = "NOMINAL"
+
+            # Separate Condition Indicator based on Health Score (0–100%)
+            # Healthy:              >= 90%
+            # Good:                 75–89.9%
+            # Warning:              60–74.9%
+            # Maintenance Required: 40–59.9%
+            # Critical:             < 40%
+            if health >= 90:
+                health_cond = "Healthy"
+            elif health >= 75:
+                health_cond = "Good"
+            elif health >= 60:
+                health_cond = "Warning"
+            elif health >= 40:
+                health_cond = "Maintenance Required"
+            else:
+                health_cond = "Critical"
 
             results.append({
                 "asset_id": str(row.get("asset_id", "UNKNOWN")),
@@ -239,12 +256,14 @@ if __name__ == "__main__":
                 "predicted_days": round(rul / 24.0, 1),
                 "risk_level": risk,
                 "health_score": round(health, 1),
+                "health_condition": health_cond,
                 "operating_hours": float(row.get("operating_hours", 0.0)),
                 "filter_dp": float(row.get("filter_dp", 0.0)),
                 "compressor_current": float(row.get("compressor_current", 0.0)),
                 "supply_air_temperature": float(row.get("supply_air_temperature", 0.0)),
                 "refrigerant_pressure": float(row.get("refrigerant_pressure", 0.0)),
                 "model_version": "random-forest-v1",
+                "prediction_source": "AI_MODEL",
             })
 
         print(json.dumps({"success": True, "count": len(results), "predictions": results}))

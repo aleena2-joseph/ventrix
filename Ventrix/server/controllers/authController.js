@@ -42,20 +42,14 @@ const register = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email already exists" });
     }
 
-    let orgId = organizationId;
     let rId = roleId;
-
-    if (!orgId) {
-      const org = await pool.query("SELECT id FROM organizations WHERE code = $1", [DEFAULT_ORG_CODE]);
-      orgId = org.rows[0]?.id || null;
-    }
     if (!rId) {
       const role = await pool.query("SELECT id FROM roles WHERE name = $1", [DEFAULT_ROLE_NAME]);
       rId = role.rows[0]?.id || null;
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await createUser(trimmedName, trimmedEmail, hashedPassword, orgId, rId);
+    const user = await createUser(trimmedName, trimmedEmail, hashedPassword, rId);
 
     res.status(201).json({ success: true, message: "User Registered Successfully", user });
   } catch (error) {
@@ -87,8 +81,6 @@ const login = async (req, res) => {
 
     const permissions = await getPermissionsForRole(user.role_name, user.role_id);
 
-    // Role and organization claims avoid repeated hierarchy lookups; the
-    // middleware still verifies the account remains active.
     const token = jwt.sign(
       {
         id: user.id,
@@ -96,9 +88,6 @@ const login = async (req, res) => {
         email: user.email,
         role: user.role_name,
         roleId: user.role_id,
-        organizationId: user.organization_id,
-        organizationName: user.organization_name,
-        orgType: user.org_type, // 'MANUFACTURER' or 'CUSTOMER'
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }

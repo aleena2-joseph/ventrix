@@ -45,7 +45,6 @@ async function ensureMaintenanceSchema() {
 // ---------------------------------------------------------------------
 const getSchedules = async (req, res) => {
   try {
-    const orgId = isCustomerRole(req.user.role) ? req.user.organizationId : (req.query.organizationId || null);
     const result = await pool.query(
       `SELECT ms.*, a.asset_code, a.name AS asset_name, a.status AS asset_status,
               c.coach_number, t.train_number,
@@ -54,11 +53,8 @@ const getSchedules = async (req, res) => {
        JOIN assets a ON ms.asset_id = a.id
        LEFT JOIN coaches c ON a.coach_id = c.id
        LEFT JOIN trains t ON c.train_id = t.id
-       LEFT JOIN projects pj ON t.project_id = pj.id
        LEFT JOIN users assignee ON ms.assigned_to = assignee.id
-       WHERE ($1::int IS NULL OR pj.organization_id = $1)
-       ORDER BY ms.scheduled_date ASC`,
-      [orgId]
+       ORDER BY ms.scheduled_date ASC`
     );
     res.status(200).json({ success: true, data: result.rows });
   } catch (error) {
@@ -160,7 +156,6 @@ const createSchedule = async (req, res) => {
 // ---------------------------------------------------------------------
 const getWorkOrders = async (req, res) => {
   try {
-    const orgId = isCustomerRole(req.user.role) ? req.user.organizationId : (req.query.organizationId || null);
     const result = await pool.query(
       `SELECT wo.*, a.asset_code, a.name AS asset_name,
               c.coach_number, t.train_number,
@@ -170,11 +165,9 @@ const getWorkOrders = async (req, res) => {
        JOIN assets a ON wo.asset_id = a.id
        LEFT JOIN coaches c ON a.coach_id = c.id
        LEFT JOIN trains t ON c.train_id = t.id
-       LEFT JOIN projects pj ON t.project_id = pj.id
        LEFT JOIN users assignee ON wo.assigned_to = assignee.id
        LEFT JOIN users creator ON wo.created_by = creator.id
        LEFT JOIN users verifier ON wo.verified_by = verifier.id
-       WHERE ($1::int IS NULL OR pj.organization_id = $1)
        ORDER BY 
          CASE wo.status 
            WHEN 'COMPLETED' THEN 1 
@@ -185,8 +178,7 @@ const getWorkOrders = async (req, res) => {
            WHEN 'OPEN' THEN 5
            ELSE 6 
          END,
-         wo.created_at DESC`,
-      [orgId]
+         wo.created_at DESC`
     );
     res.status(200).json({ success: true, data: result.rows });
   } catch (error) {
@@ -248,6 +240,25 @@ const createWorkOrder = async (req, res) => {
         existingWorkOrder: existing,
         message: `Duplicate Prevented: Work Order #${existing.id} ("${existing.title}") is already active on ${assetCode} (${existing.status}).`,
       });
+    }
+
+    // Technician Workload & Schedule Conflict Validation:
+    // Ensure the assigned technician is not overloaded with active overlapping jobs
+    if (assigned_to && !req.body.ignore_conflict) {
+      const techIdNum = Number(assigned_to);
+      const activeTechJobs = await pool.query(
+        `SELECT COUNT(*) FROM work_orders
+         WHERE assigned_to = $1 AND status IN ('ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'WAITING_FOR_PARTS')`,
+        [techIdNum]
+      );
+      const activeCount = parseInt(activeTechJobs.rows[0].count, 10);
+      if (activeCount >= 3) {
+        return res.status(409).json({
+          success: false,
+          conflict: true,
+          message: `Technician Schedule Conflict: Technician #${techIdNum} already has ${activeCount} active jobs in progress. Reassign or pass 'ignore_conflict: true' to override.`,
+        });
+      }
     }
 
     const cleanPriority = priority ? String(priority).toUpperCase() : "MEDIUM";
@@ -489,6 +500,40 @@ const verifyAndCloseWorkOrder = async (req, res) => {
       );
     }
 
+    // Re-evaluate asset condition using post-maintenance telemetry and check for other open tickets
+    const assetId = updated.asset_id;
+    if (assetId) {
+      const openWos = await pool.query(
+        `SELECT COUNT(*) FROM work_orders WHERE asset_id = $1 AND id != $2 AND status NOT IN ('CLOSED', 'CANCELLED')`,
+        [assetId, workOrderId]
+      );
+      const remainingOpenCount = parseInt(openWos.rows[0].count, 10);
+
+      // Check latest prediction & telemetry condition
+      const latestPred = await pool.query(
+        `SELECT health_score, rul_hours, risk_level FROM predictions WHERE asset_id = $1 ORDER BY predicted_at DESC LIMIT 1`,
+        [assetId]
+      );
+      const latestHealth = latestPred.rows.length > 0 ? Number(latestPred.rows[0].health_score) : 95;
+      const latestRisk = latestPred.rows.length > 0 ? latestPred.rows[0].risk_level : "NOMINAL";
+
+      // Re-evaluate operational status:
+      // If no other open work orders and telemetry health is healthy (>= 75% and risk != 'CRITICAL'), restore to OPERATIONAL.
+      // If remaining open jobs exist, maintain MAINTENANCE.
+      // If still degraded, keep WARNING.
+      let newAssetStatus = "WARNING";
+      if (remainingOpenCount === 0 && latestHealth >= 75 && latestRisk !== "CRITICAL") {
+        newAssetStatus = "OPERATIONAL";
+      } else if (remainingOpenCount > 0) {
+        newAssetStatus = "MAINTENANCE";
+      }
+
+      await pool.query(
+        `UPDATE assets SET status = $1, updated_at = NOW() WHERE id = $2 AND status != 'DECOMMISSIONED'`,
+        [newAssetStatus, assetId]
+      );
+    }
+
     await auditModel.logAction({
       userId: req.user.id,
       organizationId: req.user.organizationId,
@@ -501,7 +546,7 @@ const verifyAndCloseWorkOrder = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `Work Order #${workOrderId} verified by Engineer and officially CLOSED. Maintenance history updated.`,
+      message: `Work Order #${workOrderId} verified by Engineer and officially CLOSED. Asset condition re-evaluated.`,
       data: updated,
     });
   } catch (error) {
